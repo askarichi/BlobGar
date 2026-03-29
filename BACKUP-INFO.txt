@@ -1,0 +1,7 @@
+NOX Repo Base Full Backup
+Created: 2026-03-29 20:02:58 +02:00
+Source: D:\Game\Nox-Game\projects\nox-repo-base
+Backup: D:\Game\Nox-Game\backups\nox-repo-base-full_2026-03-29_200258
+Included: client, server, root docs/scripts used by the local build
+Excluded: node_modules, .git, .runtime
+Notes: Includes current closer client camera zoom feel, live shield/freeze/spike systems, performance safety pass, and stronger bot pressure/team tuning.
