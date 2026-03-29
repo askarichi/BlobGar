@@ -24,9 +24,9 @@ class Tournament extends Mode {
     onServerInit(gameServer) {
         Log.warn("Since the gamemode is Tournament, it is highly recommended that you don't use the reload command.");
         Log.warn("This is because configs set by the gamemode will be reset to the config.ini values.");
-        gameServer.config.playerStartSize = 100;
-        gameServer.config.botStartSize = 100;
-        gameServer.config.minionStartSize = 100;
+        gameServer.config.playerStartSize = gameServer.massToSize(10);
+        gameServer.config.botStartSize = gameServer.massToSize(10);
+        gameServer.config.minionStartSize = gameServer.massToSize(10);
         gameServer.config.serverLBUpdate = 25;
         this.prepare(gameServer);
     }

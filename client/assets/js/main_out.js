@@ -391,13 +391,13 @@
             hideFood: false,
             hideStats: false,
             showMass: false,
-            darkTheme: false,
+            darkTheme: true,
             cellBorders: true,
             jellyPhysics: false,
             showTextOutline: true,
             infiniteZoom: false,
             transparency: false,
-            mapBorders: false,
+            mapBorders: true,
             sectors: false,
             showPos: false,
             allowGETipSet: true
@@ -978,10 +978,13 @@
         wjQuery(".save").each(function() {
             let id = wjQuery(this).data("box-id"),
                 value = wHandle.localStorage.getItem("checkbox-" + id);
-            if (value && value == "true" && id > 0) {
-                wjQuery(this).prop("checked", "true");
-                wjQuery(this).trigger("change");
-            } else if (id < 1 && value != null) wjQuery(this).val(value);
+            if (id < 1) {
+                if (value != null) wjQuery(this).val(value);
+                return;
+            }
+            let checked = value != null ? value == "true" : wjQuery(this).is(":checked");
+            wjQuery(this).prop("checked", checked);
+            wjQuery(this).trigger("change");
         });
         wjQuery(".save").change(function() {
             let id = wjQuery(this).data("box-id"),

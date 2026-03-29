@@ -38,9 +38,9 @@ class HungerGames extends Tournament {
         gameServer.config.spawnInterval = 10;
         gameServer.config.foodSpawnAmount = 20;
         gameServer.config.foodMinAmount = 800;
-        gameServer.config.playerStartSize = 100;
-        gameServer.config.minionStartSize = 100;
-        gameServer.config.botStartSize = 100;
+        gameServer.config.playerStartSize = gameServer.massToSize(10);
+        gameServer.config.minionStartSize = gameServer.massToSize(10);
+        gameServer.config.botStartSize = gameServer.massToSize(10);
         gameServer.config.foodMinSize = gameServer.massToSize(2);
         gameServer.config.foodMaxSize = gameServer.massToSize(3);
         gameServer.config.virusMinAmount = 16;

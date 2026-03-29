@@ -211,7 +211,7 @@ class ProfileProgressStore {
     }
     getAbilityCost(level) {
         let safeLevel = Math.max(0, Math.round(level || 0));
-        return Math.round(10 * Math.pow(2, safeLevel));
+        return Math.round(50 * Math.pow(2, safeLevel));
     }
     findKeyByName(name) {
         let safeName = this.normalizeKey(this.sanitizeName(name));
