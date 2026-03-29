@@ -48,7 +48,8 @@
         var noxArenaDeathRevealTimer = 0;
         var noxClientConfig = {
             telegramLaunchUrl: "",
-            telegramLoginConfigured: false
+            telegramLoginConfigured: false,
+            maintenanceMode: false
         };
         var noxArenaFlowState = {
             currentName: "Pilot-07",
@@ -321,15 +322,26 @@
         }
         function noxSetPlayReady(isReady) {
             var button = document.getElementById("play-btn");
-            if (!button) return;
-            button.disabled = !isReady;
-            button.classList.toggle("is-disabled", !isReady);
-            button.title = isReady ? "" : "Preparing player session...";
+            var spectateButton = document.getElementById("spectate-btn");
+            var title = "";
+            if (noxClientConfig.maintenanceMode) title = "NOX is in maintenance mode right now.";
+            else if (!isReady) title = "Preparing player session...";
+            if (button) {
+                button.disabled = !isReady;
+                button.classList.toggle("is-disabled", !isReady);
+                button.title = isReady ? "" : title;
+            }
+            if (spectateButton) {
+                spectateButton.disabled = !isReady;
+                spectateButton.classList.toggle("is-disabled", !isReady);
+                spectateButton.title = isReady ? "" : title;
+            }
         }
         function noxLoadClientConfig() {
             return noxRequestJson("GET", noxGetClientConfigEndpoint(), null).then(function(config) {
                 noxClientConfig.telegramLaunchUrl = config && config.telegramLaunchUrl ? config.telegramLaunchUrl : "";
                 noxClientConfig.telegramLoginConfigured = !!(config && config.telegramLoginConfigured);
+                noxClientConfig.maintenanceMode = !!(config && config.maintenanceMode);
                 return noxClientConfig;
             }).catch(function() {
                 return noxClientConfig;
@@ -350,7 +362,7 @@
             }
             if (socialRow) socialRow.style.display = session && session.provider === "telegram" ? "none" : "";
             if (nickInput) syncCallsignPreview(nickInput.value);
-            noxSetPlayReady(noxAuthState.ready);
+            noxSetPlayReady(noxAuthState.ready && !noxClientConfig.maintenanceMode);
         }
         function noxHandleTelegramConnect() {
             if (noxAuthState.session && noxAuthState.session.provider === "telegram") {
@@ -1395,14 +1407,15 @@
                 noxRenderRanking();
                 noxLoadRankingData(false);
                 noxRenderNewsCards();
-                noxLoadClientConfig().then(function() {
+                noxLoadClientConfig().then(function(config) {
+                    if (config && config.maintenanceMode) showLobbyNotice("Maintenance Mode", "NOX is in maintenance mode right now. Arena entry is temporarily disabled.");
                     return noxBootstrapPlayerAuth();
                 }).then(function() {
                     noxLoadProfileProgress(true);
                 }).catch(function(error) {
                     console.warn("NOX auth bootstrap failed:", error && error.message ? error.message : error);
                     if (!noxAuthState.isTelegramMiniApp) {
-                        noxSetPlayReady(true);
+                        noxSetPlayReady(!noxClientConfig.maintenanceMode);
                         noxLoadProfileProgress(true);
                     } else showLobbyNotice("Telegram Auth", error && error.message ? error.message : "Telegram auth could not be completed.");
                 });

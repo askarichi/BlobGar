@@ -1567,7 +1567,8 @@ class GameServer {
     handleClientConfig(req, res) {
         this.sendJson(res, 200, {
             telegramLaunchUrl: String(process.env.NOX_TELEGRAM_LAUNCH_URL || "").trim(),
-            telegramLoginConfigured: !!String(process.env.NOX_TELEGRAM_BOT_TOKEN || "").trim()
+            telegramLoginConfigured: !!String(process.env.NOX_TELEGRAM_BOT_TOKEN || "").trim(),
+            maintenanceMode: this.adminStore.isMaintenanceEnabled()
         });
     }
     handleGuestSession(req, res) {
