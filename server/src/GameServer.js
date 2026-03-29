@@ -1650,6 +1650,18 @@ class GameServer {
                 ok: false,
                 error: "Broadcast message is required."
             });
+            let broadcastSender = {
+                _name: "NOX",
+                userRole: 0,
+                cells: [{
+                    color: {
+                        r: 110,
+                        g: 231,
+                        b: 255
+                    }
+                }]
+            };
+            this.sendChatMessage(broadcastSender, null, message);
             this.sendFeedEvent("NOX", message, {
                 r: 110,
                 g: 231,
