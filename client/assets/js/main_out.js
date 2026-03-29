@@ -888,9 +888,11 @@
                     server = !!(flags & 0x80),
                     admin = !!(flags & 0x40),
                     mod = !!(flags & 0x20);
-                let isFeedMessage = /^\[feed\]/i.test(message);
+                let isFeedMessage = /^\[feed\]/i.test(message),
+                    isBroadcastMessage = /^\[broadcast\]/i.test(message);
                 if (server && !isFeedMessage) break;
                 if (isFeedMessage) message = message.replace(/^\[feed\]/i, "").trim();
+                if (isBroadcastMessage) message = message.replace(/^\[broadcast\]/i, "").trim();
                 if (server && name !== "SERVER") name = "[SERVER] " + name;
                 if (admin) name = "[ADMIN] " + name;
                 if (mod) name = "[MOD] " + name;
@@ -908,6 +910,13 @@
                     time: syncUpdStamp
                 });
                 targetLog.messages = targetLog.messages.slice(-(isFeedMessage ? 20 : 40));
+                if (isBroadcastMessage) {
+                    abilityNotice.title = name || "[ADMIN] NOX";
+                    abilityNotice.message = message;
+                    abilityNotice.color = color;
+                    abilityNotice.waitUntil = syncUpdStamp + Math.max(2800, 1700 + message.length * 55);
+                    drawAbilityNotice();
+                }
                 if (isFeedMessage) {
                     if (/^(Shield|Freeze|Spike)$/i.test(name)) {
                         handleArenaAbilityNotice(name, message);

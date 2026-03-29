@@ -1652,7 +1652,7 @@ class GameServer {
             });
             let broadcastSender = {
                 _name: "NOX",
-                userRole: 0,
+                userRole: UserRoleEnum.ADMIN,
                 cells: [{
                     color: {
                         r: 110,
@@ -1661,7 +1661,7 @@ class GameServer {
                     }
                 }]
             };
-            this.sendChatMessage(broadcastSender, null, message);
+            this.sendChatMessage(broadcastSender, null, "[broadcast]" + message);
             this.sendFeedEvent("NOX", message, {
                 r: 110,
                 g: 231,
