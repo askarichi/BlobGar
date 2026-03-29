@@ -557,6 +557,10 @@
             let div = /ip=([\w\W]+):([0-9]+)/.exec(wHandle.location.search.slice(1));
             if (div) return `${div[1]}:${div[2]}`;
         }
+        if (typeof wHandle.noxGetResolvedServerHost === "function") {
+            let resolved = wHandle.noxGetResolvedServerHost();
+            if (resolved && typeof resolved === "string" && resolved.trim()) return resolved.trim();
+        }
         return null;
     }
     function getCurrentProfileName() {
