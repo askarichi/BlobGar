@@ -2121,19 +2121,22 @@ class GameServer {
     startStats(port) {
         this.stats = "Test";
         this.getStats();
-        this.httpServer = http.createServer(((req, res) => {
+        this.statsHttpServer = http.createServer(((req, res) => {
             res.setHeader("Access-Control-Allow-Origin", "*");
             res.writeHead(200);
             res.end(this.stats);
         }).bind(this));
-        this.httpServer.on("error", error => {
+        this.statsHttpServer.on("error", error => {
             Log.error("Stats Server: " + error.message);
         });
         let statsBind = this.getStats.bind(this);
-        this.httpServer.listen(port, (() => {
+        this.statsHttpServer.listen(port, (() => {
             Log.info("Started stats server on port " + port + ".");
             setInterval(statsBind, this.config.serverStatsUpdate * 1000);
         }).bind(this));
+    }
+    startStatsServer(port) {
+        this.startStats(port);
     }
     getStats() {
         let total = 0,
