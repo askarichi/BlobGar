@@ -257,6 +257,18 @@
             var nickInput = document.getElementById("nick");
             return noxExtractPlayerIdentity(nickInput ? nickInput.value : "").name || "Pilot-07";
         }
+        function noxGetResolvedServerHost() {
+            var params = new URLSearchParams(window.location.search || "");
+            var queryIp = params.get("ip");
+            var serverField = document.getElementById("gamemode");
+            var pageHost = window.location.hostname || "127.0.0.1";
+            var pagePort = String(window.location.port || "");
+            var isLocalPage = pageHost === "127.0.0.1" || pageHost === "localhost" || pagePort === "3001";
+            if (serverField && serverField.value && serverField.value.trim()) return serverField.value.trim();
+            if (queryIp && queryIp.trim()) return queryIp.trim();
+            if (isLocalPage) return pageHost + ":15003";
+            return pageHost + ":444";
+        }
         function noxGetApiBase() {
             return noxGetRankingEndpoint().replace(/\/nox\/rankings$/, "");
         }
@@ -1051,10 +1063,9 @@
             if (tabButton) tabButton.classList.add("is-active");
         }
         function noxGetRankingEndpoint() {
-            var host = "127.0.0.1:15003";
-            var serverField = document.getElementById("gamemode");
-            if (serverField && serverField.value) host = serverField.value.trim();
-            if (!/^https?:\/\//i.test(host)) host = "http://" + host;
+            var host = noxGetResolvedServerHost();
+            var useHttps = window.location.protocol === "https:" && !/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host);
+            if (!/^https?:\/\//i.test(host)) host = (useHttps ? "https://" : "http://") + host;
             return host.replace(/\/+$/, "") + "/nox/rankings";
         }
         function noxRankingName() {
@@ -1350,9 +1361,7 @@
             noxShowModal();
         }
         function noxAdminBaseUrl() {
-            var params = new URLSearchParams(window.location.search || "");
-            var ip = params.get("ip") || "127.0.0.1:15003";
-            return (window.location.protocol === "https:" ? "https://" : "http://") + ip.replace(/^ws(s)?:\/\//, "");
+            return noxGetApiBase();
         }
         function noxSyncAdminAccessButton() {
             var button = document.getElementById("nox-admin-launch");
@@ -1689,7 +1698,7 @@
                                     </div>
                                     <div class="nox-hidden-field" aria-hidden="true">
                                         <select id="gamemode" class="form-control" onchange="setServer($(this).val());">
-                                            <option value="127.0.0.1:15003">NOX Local Arena (15003)</option>
+                                            <option value="">NOX Arena</option>
                                         </select>
                                     </div>
 
