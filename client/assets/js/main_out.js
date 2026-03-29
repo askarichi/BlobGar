@@ -894,7 +894,7 @@
                 if (server && name !== "SERVER") name = "[SERVER] " + name;
                 if (admin) name = "[ADMIN] " + name;
                 if (mod) name = "[MOD] " + name;
-                let wait = isFeedMessage ? Math.max(1200, 480 + message.length * 32) : Math.max(2400, 900 + message.length * 90);
+                let wait = isFeedMessage ? Math.max(900, 320 + message.length * 24) : Math.max(2400, 900 + message.length * 90);
                 let targetLog = isFeedMessage ? feed : chat;
                 targetLog.waitUntil = isFeedMessage ? syncUpdStamp + wait : (syncUpdStamp - targetLog.waitUntil > 1000 ? syncUpdStamp + wait : targetLog.waitUntil + wait);
                 targetLog.messages.push({
@@ -1750,9 +1750,9 @@
             color: settings.darkTheme ? "#E7DEC6" : "#F5EBD7"}
         ]);
         let width = 0,
-            lineHeight = 16,
-            fontSize = 13,
-            height = lineHeight * len + 4;
+            lineHeight = 13,
+            fontSize = 11,
+            height = lineHeight * len + 2;
         for (let i = 0; i < len; i++) {
             let thisLineWidth = 0,
                 complexes = lines[i];
@@ -1763,17 +1763,17 @@
             }
             width = Math.max(thisLineWidth, width);
         }
-        canvas.width = width + 12;
+        canvas.width = width + 8;
         canvas.height = height;
         ctx.textBaseline = "middle";
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = "rgba(0, 0, 0, 0.22)";
+        ctx.shadowBlur = 2;
+        ctx.shadowColor = "rgba(0, 0, 0, 0.14)";
         for (let i = 0; i < len; i++) {
             let lineWidth = 0,
                 complexes = lines[i];
             for (let j = 0; j < complexes.length; j++) lineWidth += complexes[j].width;
-            let drawX = Math.max(6, (canvas.width - lineWidth) / 2),
-                drawY = 7 + i * lineHeight;
+            let drawX = Math.max(4, (canvas.width - lineWidth) / 2),
+                drawY = 5 + i * lineHeight;
             for (let j = 0; j < complexes.length; j++) {
                 ctx.font = "600 " + fontSize + "px Ubuntu";
                 ctx.fillStyle = complexes[j].color;
@@ -2150,10 +2150,10 @@
             mainCtx.globalAlpha = 1;
         }
         if (!settings.hideFeed && feed.visible) {
-            let feedFade = isTyping ? .88 : (Math.max(650 - syncAppStamp + feed.waitUntil, 0) / 650) * .78;
-            mainCtx.globalAlpha = Math.max(0, Math.min(feedFade, .88));
+            let feedFade = isTyping ? .56 : (Math.max(520 - syncAppStamp + feed.waitUntil, 0) / 520) * .54;
+            mainCtx.globalAlpha = Math.max(0, Math.min(feedFade, .56));
             let feedX = Math.max(0, ((mainCanvas.width / camera.viewMult) - feed.canvas.width) / 2),
-                feedY = Math.max(0, (mainCanvas.height - 28) / camera.viewMult - feed.canvas.height);
+                feedY = Math.max(0, (mainCanvas.height - 12) / camera.viewMult - feed.canvas.height);
             mainCtx.drawImage(feed.canvas, feedX, feedY);
             mainCtx.globalAlpha = 1;
         }
