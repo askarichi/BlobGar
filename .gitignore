@@ -5,6 +5,13 @@ server/node_modules/
 server/.env
 server/.env.local
 server/.env.production
+server/src/data/admin-store.json
+server/src/data/player-auth-secret.txt
+server/src/data/profile-progress.json
+server/src/data/rankings.json
+server/src/data/support-reports.json
+server/src/data/support-telegram-queue.json
+server/src/data/support-screenshots/
 
 client/.DS_Store
 server/.DS_Store
