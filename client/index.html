@@ -1,0 +1,2131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="NOX local arena client for fast multiplayer cell battles.">
+    <meta name="keywords" content="nox, arena, cell game, multiplayer, browser game, local test">
+    <meta name="robots" content="index, follow">
+    <meta name="viewport" content="minimal-ui, width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>NOX Arena</title>
+    <link id="favicon" rel="icon" type="image/png" href="assets/img/favicon.png" />
+    <link href="https://fonts.googleapis.com/css?family=Rajdhani:500,600,700|Ubuntu:700" rel="stylesheet" type="text/css">
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/css/index.css" rel="stylesheet">
+    <script src="assets/js/jquery-1.11.3.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="assets/js/quadtree.js"></script>
+    <script src="assets/js/main_out.js"></script>
+    <script src="assets/js/nox-skins.js"></script>
+    <script>
+        var noxSelectedSkin = null;
+        var noxMusicEnabled = false;
+        var noxMusicVolume = 0.34;
+        var noxMusicUnlocked = false;
+        var noxMusicAudio = null;
+        var noxMusicCandidateIndex = 0;
+        var noxRankingState = {
+            view: "overall",
+            snapshot: null,
+            loading: false
+        };
+        var noxProfileState = {
+            loading: false,
+            upgradingKey: "",
+            currentName: "",
+            summary: null
+        };
+        var noxAuthState = {
+            loading: false,
+            ready: false,
+            session: null,
+            csrfToken: "",
+            isTelegramMiniApp: false
+        };
+        var noxArenaDeathNoticeShownAt = 0;
+        var noxArenaDeathRevealTimer = 0;
+        var noxClientConfig = {
+            telegramLaunchUrl: "",
+            telegramLoginConfigured: false
+        };
+        var noxArenaFlowState = {
+            currentName: "Pilot-07",
+            startedAt: 0,
+            mode: "",
+            lastResult: null
+        };
+        var noxAbilityCatalog = {
+            speed: "Speed",
+            mass: "Mass",
+            shieldCooldown: "Shield Cooldown",
+            shieldDuration: "Shield Duration",
+            spikeCooldown: "Spike Cooldown",
+            freezeCooldown: "Freeze Cooldown",
+            freezeDuration: "Freeze Duration",
+            splitCooldown: "Split Cooldown",
+            massEjectCooldown: "Mass Eject Cooldown"
+        };
+        var noxLiveAbilityKeys = {
+            speed: true,
+            mass: true,
+            shieldCooldown: true,
+            shieldDuration: true,
+            spikeCooldown: true,
+            freezeCooldown: true,
+            freezeDuration: true,
+            massEjectCooldown: true
+        };
+        var noxSupportScreenshotData = "";
+        var noxNewsLibrary = [{
+            id: "build-update",
+            eyebrow: "Build Update",
+            title: "NOX Arena Shell Online",
+            excerpt: "The command lobby, inventory skins, ranking lane, and local music toggle are now running inside one unified shell.",
+            body: "The current local build now runs on the preserved repo mechanics base while layering in the NOX command shell, inventory flow, ranking hub, music toggle, and profile systems. This means the core arena feel stays intact while the product shell keeps getting stronger around it.",
+            art: "nox-news-card__art--build"
+        }, {
+            id: "ranking-update",
+            eyebrow: "Competitive",
+            title: "Weekly and Top 100 Are Live",
+            excerpt: "Rankings now persist real player runs and stay empty until a real pilot earns a place on the board.",
+            body: "The ranking lane now records real player runs only. Bots and minions are excluded, weekly and top 100 overall are tracked independently, and the board updates when a run ends through death or disconnect. If nobody has earned a place yet, the board stays clean with dash placeholders.",
+            art: "nox-news-card__art--ranking"
+        }, {
+            id: "locker-update",
+            eyebrow: "Locker",
+            title: "Skins Flow Into Profile",
+            excerpt: "Skin cards can now be previewed, equipped, and reflected directly in the profile and center orb previews.",
+            body: "The inventory skin flow now behaves like a real locker. Selecting a skin opens a centered preview, shows rarity and edition styling, and lets you equip it immediately. Once equipped, the chosen skin reflects in the profile and center orb presentation so your selected shell is visible across the lobby.",
+            art: "nox-news-card__art--locker"
+        }];
+        var noxMusicCandidates = [
+            "./assets/sound/music/nox-theme.mp3",
+            "./assets/sound/music/lobby-theme.mp3",
+            "./assets/sound/music/arena-theme.mp3"
+        ];
+        var NOX_BASE_SKIN = "Base";
+        function noxSkinLibrary() {
+            return Array.isArray(window.NOX_SKIN_LIBRARY) ? window.NOX_SKIN_LIBRARY : [];
+        }
+        function noxHasSkin(skinName) {
+            return !!skinName && noxSkinLibrary().indexOf(skinName) !== -1;
+        }
+        function noxResolveSkinSelection(skinName) {
+            return noxHasSkin(skinName) ? skinName : NOX_BASE_SKIN;
+        }
+        function noxExtractPlayerIdentity(value) {
+            var rawValue = (value || "").trim();
+            var match = rawValue.match(/^\{([^}]+)\}\s*(.*)$/);
+            if (!match) return {
+                skin: null,
+                name: rawValue
+            };
+            return {
+                skin: match[1] || null,
+                name: (match[2] || "").trim()
+            };
+        }
+        function noxFormatSkinName(value) {
+            return (value || "")
+                .replace(/_/g, " ")
+                .replace(/\s+/g, " ")
+                .trim()
+                .replace(/\b([a-z])/g, function(match) {
+                    return match.toUpperCase();
+                });
+        }
+        function noxEscapeHtml(value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+        function noxHashValue(value) {
+            var hash = 0;
+            for (var i = 0; i < value.length; i++) hash = ((hash << 5) - hash) + value.charCodeAt(i);
+            return Math.abs(hash);
+        }
+        function noxSkinAssetPath(skinName) {
+            return "./skins/" + encodeURIComponent(skinName) + ".png";
+        }
+        function noxSkinRarity(skinName) {
+            var hash = noxHashValue(skinName) % 100;
+            if (hash < 8) return "Legend";
+            if (hash < 24) return "Epic";
+            if (hash < 54) return "Rare";
+            return "Common";
+        }
+        function noxSkinEdition(skinName, rarity) {
+            var totals = {
+                Legend: 600,
+                Epic: 1200,
+                Rare: 2400,
+                Common: 5000
+            };
+            var total = totals[rarity] || 1200;
+            var current = (noxHashValue(skinName + rarity) % total) + 1;
+            return {
+                current: current,
+                total: total
+            };
+        }
+        function noxSkinDescription(skinName, rarity) {
+            var displayName = noxFormatSkinName(skinName);
+            if (skinName === NOX_BASE_SKIN) return displayName + " is the standard NOX shell issued to every pilot by default.";
+            if (rarity === "Legend") return displayName + " is a legend-tier shell tuned for high-visibility arena runs.";
+            if (rarity === "Epic") return displayName + " carries a premium arena finish built for standout competitive drops.";
+            if (rarity === "Rare") return displayName + " is a rare shell variant with a clean tactical profile.";
+            return displayName + " is a standard shell ready for everyday arena deployment.";
+        }
+        function noxComposePlayName(nameValue) {
+            var cleanName = noxAuthState.session && noxAuthState.session.nameLocked ? noxAuthState.session.displayName : noxExtractPlayerIdentity(nameValue).name;
+            if (!cleanName) cleanName = "Pilot-07";
+            return "{" + noxResolveSkinSelection(noxSelectedSkin) + "} " + cleanName;
+        }
+        function noxPersistSelectedSkin() {
+            if (window.localStorage == null) return;
+            window.localStorage.setItem("nox-selected-skin", noxResolveSkinSelection(noxSelectedSkin));
+        }
+        function noxBuildMusicAudio() {
+            if (noxMusicAudio) return noxMusicAudio;
+            noxMusicAudio = new Audio();
+            noxMusicAudio.loop = true;
+            noxMusicAudio.preload = "none";
+            noxMusicAudio.volume = noxMusicVolume;
+            noxMusicAudio.addEventListener("error", function() {
+                if (noxMusicCandidateIndex >= noxMusicCandidates.length - 1) return;
+                noxMusicCandidateIndex += 1;
+                noxMusicAudio.src = noxMusicCandidates[noxMusicCandidateIndex];
+                if (noxMusicEnabled && noxMusicUnlocked) {
+                    var retry = noxMusicAudio.play();
+                    if (retry && retry.catch) retry.catch(function() {});
+                }
+            });
+            noxMusicAudio.src = noxMusicCandidates[noxMusicCandidateIndex];
+            return noxMusicAudio;
+        }
+        function noxSyncMusicVolumeUI() {
+            var slider = document.getElementById("nox-music-volume");
+            var valueNode = document.getElementById("nox-music-volume-value");
+            if (!slider) return;
+            var value = parseFloat(slider.value);
+            if (!isFinite(value)) value = noxMusicVolume;
+            value = Math.max(0, Math.min(1, value));
+            noxMusicVolume = value;
+            slider.value = value;
+            if (valueNode) valueNode.textContent = Math.round(value * 100) + "%";
+            if (window.localStorage) window.localStorage.setItem("nox-music-volume", value);
+            if (noxMusicAudio) noxMusicAudio.volume = noxMusicVolume;
+        }
+        function noxStartMusicPlayback() {
+            if (!noxMusicEnabled || !noxMusicUnlocked) return;
+            var audio = noxBuildMusicAudio();
+            if (!audio) return;
+            audio.volume = noxMusicVolume;
+            var playAttempt = audio.play();
+            if (playAttempt && playAttempt.catch) playAttempt.catch(function() {});
+        }
+        function noxStopMusicPlayback() {
+            if (!noxMusicAudio) return;
+            noxMusicAudio.pause();
+        }
+        function noxPrimeMusic() {
+            noxMusicUnlocked = true;
+            noxStartMusicPlayback();
+        }
+        function noxSetMusicEnabled(arg) {
+            noxMusicEnabled = !!arg;
+            if (window.localStorage) window.localStorage.setItem("nox-music-enabled", noxMusicEnabled ? "true" : "false");
+            noxSyncMusicToggleUI();
+            if (noxMusicEnabled) noxStartMusicPlayback();
+            else noxStopMusicPlayback();
+        }
+        function noxSyncMusicToggleUI() {
+            var toggle = document.getElementById("nox-music-toggle");
+            if (!toggle) return;
+            toggle.checked = !!noxMusicEnabled;
+        }
+        function noxToggleMusicEnabled() {
+            noxSetMusicEnabled(!noxMusicEnabled);
+        }
+        function noxCurrentProfileName() {
+            if (noxAuthState.session && noxAuthState.session.nameLocked) return noxAuthState.session.displayName || "Pilot-07";
+            var nickInput = document.getElementById("nick");
+            return noxExtractPlayerIdentity(nickInput ? nickInput.value : "").name || "Pilot-07";
+        }
+        function noxGetApiBase() {
+            return noxGetRankingEndpoint().replace(/\/nox\/rankings$/, "");
+        }
+        function noxGetPlayerSessionEndpoint() {
+            return noxGetApiBase() + "/nox/auth/session";
+        }
+        function noxGetClientConfigEndpoint() {
+            return noxGetApiBase() + "/nox/client-config";
+        }
+        function noxGetGuestAuthEndpoint() {
+            return noxGetApiBase() + "/nox/auth/guest";
+        }
+        function noxGetTelegramAuthEndpoint() {
+            return noxGetApiBase() + "/nox/auth/telegram";
+        }
+        function noxGetProfileEndpoint() {
+            return noxGetApiBase() + "/nox/profile-progress";
+        }
+        function noxGetProfileUpgradeEndpoint() {
+            return noxGetProfileEndpoint() + "/upgrade";
+        }
+        function noxRequestJson(method, url, payload, options) {
+            return new Promise(function(resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                var settings = options || {};
+                xhr.open(method, url, true);
+                xhr.withCredentials = settings.withCredentials !== false;
+                xhr.setRequestHeader("Accept", "application/json");
+                if (payload != null) xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                if (settings.csrfToken) xhr.setRequestHeader("X-NOX-PLAYER-CSRF", settings.csrfToken);
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState !== 4) return;
+                    var response = {};
+                    try {
+                        response = JSON.parse(xhr.responseText || "{}");
+                    } catch (error) {
+                        response = {};
+                    }
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(response);
+                        return;
+                    }
+                    reject(new Error(response && response.error ? response.error : "Request failed."));
+                };
+                xhr.onerror = function() {
+                    reject(new Error("Request failed."));
+                };
+                xhr.send(payload != null ? JSON.stringify(payload) : null);
+            });
+        }
+        function noxSetPlayReady(isReady) {
+            var button = document.getElementById("play-btn");
+            if (!button) return;
+            button.disabled = !isReady;
+            button.classList.toggle("is-disabled", !isReady);
+            button.title = isReady ? "" : "Preparing player session...";
+        }
+        function noxLoadClientConfig() {
+            return noxRequestJson("GET", noxGetClientConfigEndpoint(), null).then(function(config) {
+                noxClientConfig.telegramLaunchUrl = config && config.telegramLaunchUrl ? config.telegramLaunchUrl : "";
+                noxClientConfig.telegramLoginConfigured = !!(config && config.telegramLoginConfigured);
+                return noxClientConfig;
+            }).catch(function() {
+                return noxClientConfig;
+            });
+        }
+        function noxApplyAuthState(session) {
+            var nickInput = document.getElementById("nick");
+            var socialRow = document.getElementById("nox-social-row");
+            noxAuthState.session = session || null;
+            noxAuthState.csrfToken = session && session.csrfToken ? session.csrfToken : "";
+            noxAuthState.ready = !!(session && session.authenticated);
+            if (nickInput && session && session.displayName) {
+                nickInput.value = session.displayName;
+                nickInput.readOnly = !!session.nameLocked;
+                nickInput.classList.toggle("is-readonly", !!session.nameLocked);
+                nickInput.title = session.nameLocked ? "This username is provided by your Telegram account." : "";
+                if (window.localStorage && !session.nameLocked) window.localStorage.setItem("checkbox-0", session.displayName);
+            }
+            if (socialRow) socialRow.style.display = session && session.provider === "telegram" ? "none" : "";
+            if (nickInput) syncCallsignPreview(nickInput.value);
+            noxSetPlayReady(noxAuthState.ready);
+        }
+        function noxHandleTelegramConnect() {
+            if (noxAuthState.session && noxAuthState.session.provider === "telegram") {
+                showLobbyNotice("Telegram Connected", "You are already connected through Telegram.");
+                return false;
+            }
+            if (noxClientConfig.telegramLaunchUrl) {
+                window.open(noxClientConfig.telegramLaunchUrl, "_blank", "noopener");
+                return false;
+            }
+            if (noxClientConfig.telegramLoginConfigured) {
+                showLobbyNotice("Open In Telegram", "Telegram login is ready. Open NOX from your Telegram bot Mini App or set NOX_TELEGRAM_LAUNCH_URL so this button can open it directly.");
+                return false;
+            }
+            showLobbyNotice("Telegram Setup", "Telegram login is not fully configured yet. Add your bot token and launch URL first.");
+            return false;
+        }
+        function noxTelegramMiniApp() {
+            return !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+        }
+        function noxBootstrapPlayerAuth() {
+            var nickInput = document.getElementById("nick");
+            var preferredName = noxExtractPlayerIdentity(nickInput ? nickInput.value : "").name || "Pilot-07";
+            noxAuthState.loading = true;
+            noxAuthState.isTelegramMiniApp = noxTelegramMiniApp();
+            noxSetPlayReady(false);
+            if (noxAuthState.isTelegramMiniApp) {
+                try {
+                    window.Telegram.WebApp.ready();
+                    if (window.Telegram.WebApp.expand) window.Telegram.WebApp.expand();
+                } catch (error) {
+                }
+                if (nickInput) {
+                    nickInput.readOnly = true;
+                    nickInput.classList.add("is-readonly");
+                }
+                var socialRow = document.getElementById("nox-social-row");
+                if (socialRow) socialRow.style.display = "none";
+                return noxRequestJson("POST", noxGetTelegramAuthEndpoint(), {
+                    initData: window.Telegram.WebApp.initData || ""
+                }).then(function(session) {
+                    noxApplyAuthState(session);
+                    return session;
+                });
+            }
+            return noxRequestJson("POST", noxGetGuestAuthEndpoint(), {
+                name: preferredName
+            }).then(function(session) {
+                noxApplyAuthState(session);
+                return session;
+            });
+        }
+        function noxFetchProfileProgressByName(name, onSuccess, onError) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", noxGetProfileEndpoint() + "?name=" + encodeURIComponent(name || "Pilot-07"), true);
+            xhr.withCredentials = true;
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) return;
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        onSuccess(JSON.parse(xhr.responseText || "{}"));
+                    } catch (error) {
+                        if (onError) onError(error);
+                    }
+                    return;
+                }
+                if (onError) onError(new Error("Profile sync failed."));
+            };
+            xhr.onerror = function(error) {
+                if (onError) onError(error || new Error("Profile sync failed."));
+            };
+            xhr.send();
+        }
+        window.noxCurrentProfileName = noxCurrentProfileName;
+        function noxCreateAbilitiesSummary() {
+            var result = {};
+            Object.keys(noxAbilityCatalog).forEach(function(key) {
+                result[key] = {
+                    level: 0,
+                    maxLevel: 50,
+                    nextCost: 10,
+                    isLive: !!noxLiveAbilityKeys[key],
+                    status: noxLiveAbilityKeys[key] ? "live" : "comingSoon"
+                };
+            });
+            return result;
+        }
+        function noxCreateProfileSummary(name) {
+            return {
+                name: name || "Pilot-07",
+                coins: 0,
+                totalXp: 0,
+                totalKills: 0,
+                totalTimePlayedSeconds: 0,
+                totalWins: 0,
+                lastRun: null,
+                abilities: noxCreateAbilitiesSummary(),
+                resources: {
+                    freezes: 0,
+                    shields: 0,
+                    spikes: 0
+                }
+            };
+        }
+        function noxFormatTimePlayed(seconds) {
+            var safeSeconds = Math.max(0, Math.round(seconds || 0));
+            if (!safeSeconds) return "0m";
+            var hours = Math.floor(safeSeconds / 3600);
+            var minutes = Math.floor((safeSeconds % 3600) / 60);
+            if (hours > 0) return hours + "h " + minutes + "m";
+            return Math.max(1, minutes) + "m";
+        }
+        function noxRenderAbilities() {
+            var summary = noxProfileState.summary || noxCreateProfileSummary(noxCurrentProfileName());
+            var coins = Math.max(0, Math.round(summary.coins || 0));
+            var abilities = summary.abilities || noxCreateAbilitiesSummary();
+            Object.keys(noxAbilityCatalog).forEach(function(key) {
+                var ability = abilities[key] || {
+                    level: 0,
+                    maxLevel: 50,
+                    nextCost: 10
+                };
+                var level = Math.max(0, Math.min(ability.maxLevel || 50, Math.round(ability.level || 0)));
+                var maxLevel = Math.max(1, Math.round(ability.maxLevel || 50));
+                var nextCost = Math.max(0, Math.round(ability.nextCost || 0));
+                var isLive = ability.isLive !== false;
+                var levelNode = document.getElementById("nox-ability-level-" + key);
+                var barNode = document.getElementById("nox-ability-bar-" + key);
+                var buttonNode = document.getElementById("nox-ability-upgrade-" + key);
+                var rowNode = document.querySelector(".nox-ability-row[data-ability-key='" + key + "']");
+                if (levelNode) levelNode.textContent = "Lv. " + level + " / " + maxLevel;
+                if (barNode) barNode.style.width = (level / maxLevel * 100) + "%";
+                if (rowNode) rowNode.classList.toggle("is-coming-soon", !isLive);
+                if (buttonNode) {
+                    var atMax = level >= maxLevel;
+                    var canAfford = !atMax && coins >= nextCost;
+                    buttonNode.disabled = !isLive || atMax || !canAfford || noxProfileState.upgradingKey === key;
+                    buttonNode.classList.toggle("is-disabled", buttonNode.disabled);
+                    if (!isLive) buttonNode.title = noxAbilityCatalog[key] + " is reserved for a future gameplay system.";
+                    else if (atMax) buttonNode.title = noxAbilityCatalog[key] + " is maxed";
+                    else buttonNode.title = "Upgrade " + noxAbilityCatalog[key] + " (" + nextCost.toLocaleString() + " coins)";
+                }
+            });
+        }
+        function noxRenderProfileProgress() {
+            var summary = noxProfileState.summary || noxCreateProfileSummary(noxCurrentProfileName());
+            var value = document.getElementById("nox-coin-balance");
+            if (value) value.textContent = (summary.coins || 0).toLocaleString();
+            var xpState = noxBuildXpLevelState(summary.totalXp || 0);
+            var profileLevel = document.getElementById("profile-level-copy");
+            var profileXpBar = document.getElementById("profile-xp-progress");
+            var profileXpCopy = document.getElementById("profile-xp-copy");
+            if (profileLevel) profileLevel.textContent = "LEVEL " + xpState.level;
+            if (profileXpBar) profileXpBar.style.width = Math.round((xpState.progress || 0) * 100) + "%";
+            if (profileXpCopy) profileXpCopy.textContent = xpState.progressXp.toLocaleString() + " / " + xpState.requiredXp.toLocaleString() + " XP";
+            var kills = document.getElementById("nox-home-stat-kills");
+            if (kills) kills.textContent = (summary.totalKills || 0).toLocaleString();
+            var timePlayed = document.getElementById("nox-home-stat-time");
+            if (timePlayed) timePlayed.textContent = noxFormatTimePlayed(summary.totalTimePlayedSeconds || 0);
+            var wins = document.getElementById("nox-home-stat-wins");
+            if (wins) wins.textContent = (summary.totalWins || 0).toLocaleString();
+            var resources = summary.resources || {};
+            var freezes = document.getElementById("nox-resource-freezes");
+            var shields = document.getElementById("nox-resource-shields");
+            var spikes = document.getElementById("nox-resource-spikes");
+            if (freezes) freezes.textContent = (resources.freezes || 0).toLocaleString();
+            if (shields) shields.textContent = (resources.shields || 0).toLocaleString();
+            if (spikes) spikes.textContent = (resources.spikes || 0).toLocaleString();
+            noxRenderAbilities();
+            if (window.noxSyncArenaAbilityHudFromProfile) window.noxSyncArenaAbilityHudFromProfile();
+        }
+        function noxUpgradeAbility(abilityKey) {
+            if (!noxAbilityCatalog[abilityKey] || noxProfileState.upgradingKey || !noxAuthState.ready) return;
+            noxProfileState.upgradingKey = abilityKey;
+            noxRenderAbilities();
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", noxGetProfileUpgradeEndpoint(), true);
+            xhr.withCredentials = true;
+            xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+            if (noxAuthState.csrfToken) xhr.setRequestHeader("X-NOX-PLAYER-CSRF", noxAuthState.csrfToken);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) return;
+                noxProfileState.upgradingKey = "";
+                var payload = null;
+                try {
+                    payload = JSON.parse(xhr.responseText || "{}");
+                } catch (error) {
+                    payload = null;
+                }
+                if (xhr.status >= 200 && xhr.status < 300 && payload && payload.ok) {
+                    noxProfileState.summary = payload.summary || noxCreateProfileSummary(noxCurrentProfileName());
+                    noxRenderProfileProgress();
+                    showLobbyNotice("Abilities", noxAbilityCatalog[abilityKey] + " upgraded successfully.");
+                    return;
+                }
+                if (payload && payload.summary) noxProfileState.summary = payload.summary;
+                noxRenderProfileProgress();
+                if (payload && payload.requiredCoins && payload.currentCoins != null) {
+                    showLobbyNotice("Abilities", "You need " + payload.requiredCoins.toLocaleString() + " coins for " + noxAbilityCatalog[abilityKey] + ". Current balance: " + payload.currentCoins.toLocaleString() + ".");
+                    return;
+                }
+                showLobbyNotice("Abilities", payload && payload.error ? payload.error : "Upgrade failed.");
+            };
+            xhr.onerror = function() {
+                noxProfileState.upgradingKey = "";
+                noxRenderProfileProgress();
+                showLobbyNotice("Abilities", "Upgrade sync failed. Please try again.");
+            };
+            xhr.send(JSON.stringify({
+                abilityKey: abilityKey
+            }));
+        }
+        function noxLoadProfileProgress(force) {
+            if (!noxAuthState.ready) return;
+            var name = noxCurrentProfileName();
+            if (!force && noxProfileState.loading) return;
+            if (!force && noxProfileState.summary && noxProfileState.currentName === name) {
+                noxRenderProfileProgress();
+                return;
+            }
+            noxProfileState.loading = true;
+            noxProfileState.currentName = name;
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", noxGetProfileEndpoint() + "?name=" + encodeURIComponent(name), true);
+            xhr.withCredentials = true;
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) return;
+                noxProfileState.loading = false;
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        noxProfileState.summary = JSON.parse(xhr.responseText || "{}");
+                    } catch (error) {
+                        noxProfileState.summary = noxCreateProfileSummary(name);
+                    }
+                } else if (!noxProfileState.summary) noxProfileState.summary = noxCreateProfileSummary(name);
+                noxRenderProfileProgress();
+            };
+            xhr.onerror = function() {
+                noxProfileState.loading = false;
+                if (!noxProfileState.summary) noxProfileState.summary = noxCreateProfileSummary(name);
+                noxRenderProfileProgress();
+            };
+            xhr.send();
+        }
+        window.noxLoadProfileProgress = noxLoadProfileProgress;
+        function noxSyncFullscreenUI() {
+            var button = document.getElementById("nox-fullscreen-toggle");
+            if (!button) return;
+            var active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            button.classList.toggle("is-active", active);
+            button.textContent = active ? "Exit" : "Enter";
+        }
+        function noxToggleFullscreen() {
+            var doc = document;
+            var root = document.documentElement;
+            var active = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+            if (!active) {
+                var enter = root.requestFullscreen || root.webkitRequestFullscreen;
+                if (!enter) {
+                    showLobbyNotice("Fullscreen", "Fullscreen is not available in this browser.");
+                    return;
+                }
+                var request = enter.call(root);
+                if (request && request.catch) request.catch(function() {});
+            } else {
+                var exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+                if (!exit) return;
+                var leave = exit.call(doc);
+                if (leave && leave.catch) leave.catch(function() {});
+            }
+        }
+        function noxEnterFullscreenSilently() {
+            var doc = document;
+            var root = document.documentElement;
+            if (doc.fullscreenElement || doc.webkitFullscreenElement) return;
+            var enter = root.requestFullscreen || root.webkitRequestFullscreen;
+            if (!enter) return;
+            try {
+                var request = enter.call(root);
+                if (request && request.catch) request.catch(function() {});
+            } catch (error) {
+            }
+        }
+        function noxOpenGuideModal() {
+            var modal = document.getElementById("inPageModal");
+            modal.classList.remove("is-skin-view");
+            modal.classList.remove("is-news-view");
+            document.getElementById("inPageModalTitle").textContent = "Game Guide";
+            document.getElementById("inPageModalBody").innerHTML =
+                "<div class='nox-guide-modal'>" +
+                    "<div class='nox-guide-section'>" +
+                        "<h3>Lobby</h3>" +
+                        "<p>Use <strong>Home</strong> to enter the arena, <strong>Inventory</strong> to choose a skin, <strong>Ranking</strong> to view leaderboards, and <strong>Support</strong> to submit reports.</p>" +
+                    "</div>" +
+                    "<div class='nox-guide-section'>" +
+                        "<h3>Arena Controls</h3>" +
+                        "<ul>" +
+                            "<li><strong>Mouse</strong> moves your cell</li>" +
+                            "<li><strong>Space</strong> splits</li>" +
+                            "<li><strong>Shift</strong> throws mass</li>" +
+                            "<li><strong>W</strong> activates Shield</li>" +
+                            "<li><strong>E</strong> launches Freeze</li>" +
+                            "<li><strong>Q</strong> launches Spike</li>" +
+                            "<li><strong>X</strong> toggles color shift</li>" +
+                            "<li><strong>D</strong> double split</li>" +
+                            "<li><strong>A</strong> triple split</li>" +
+                            "<li><strong>C</strong> max split burst</li>" +
+                            "<li><strong>Enter</strong> opens chat</li>" +
+                            "<li><strong>Esc</strong> opens the leave-match prompt</li>" +
+                        "</ul>" +
+                    "</div>" +
+                    "<div class='nox-guide-section'>" +
+                        "<h3>Tips</h3>" +
+                        "<p>Shield, Freeze, and Spike use the charges shown in your profile. All arena keys can be changed in <strong>Settings -> Key Bindings</strong>. Sound, music, logs, and fullscreen can be managed from the same screen.</p>" +
+                    "</div>" +
+                "</div>";
+            noxShowModal();
+        }
+        function noxShowModal() {
+            var modal = document.getElementById("inPageModal");
+            if (!modal) return;
+            if (window.wjQuery && wjQuery.fn && wjQuery.fn.modal) {
+                var staticMode = modal.classList.contains("is-run-results");
+                wjQuery("#inPageModal").modal({
+                    backdrop: staticMode ? "static" : true,
+                    keyboard: !staticMode,
+                    show: true
+                });
+                return;
+            }
+            modal.style.display = "block";
+            modal.classList.add("in");
+            modal.setAttribute("aria-hidden", "false");
+            document.body.classList.add("modal-open");
+            var backdrop = document.createElement("div");
+            backdrop.className = "modal-backdrop fade in nox-modal-backdrop";
+            backdrop.setAttribute("data-nox-backdrop", "true");
+            document.body.appendChild(backdrop);
+        }
+        function noxHideModal() {
+            var modal = document.getElementById("inPageModal");
+            if (!modal) return;
+            if (window.wjQuery && wjQuery.fn && wjQuery.fn.modal) {
+                wjQuery("#inPageModal").modal("hide");
+                return;
+            }
+            modal.style.display = "none";
+            modal.classList.remove("in");
+            modal.setAttribute("aria-hidden", "true");
+            document.body.classList.remove("modal-open");
+            var backdrops = document.querySelectorAll("[data-nox-backdrop='true']");
+            for (var i = 0; i < backdrops.length; i++) backdrops[i].remove();
+            modal.classList.remove("is-skin-view");
+            modal.classList.remove("is-news-view");
+            modal.classList.remove("is-exit-confirm");
+            modal.classList.remove("is-run-results");
+        }
+        function noxResetModalModes() {
+            var modal = document.getElementById("inPageModal");
+            if (!modal) return;
+            modal.classList.remove("is-skin-view");
+            modal.classList.remove("is-news-view");
+            modal.classList.remove("is-exit-confirm");
+            modal.classList.remove("is-run-results");
+        }
+        function noxFormatBattleTime(seconds) {
+            var safeSeconds = Math.max(0, Math.round(seconds || 0));
+            var minutes = Math.floor(safeSeconds / 60);
+            var remainingSeconds = safeSeconds % 60;
+            return minutes + "m " + String(remainingSeconds).padStart(2, "0") + "s";
+        }
+        function noxShowArenaDeathNotice(details) {
+            var root = document.getElementById("nox-arena-death-notice");
+            if (!root) return;
+            var title = root.querySelector(".nox-arena-death-notice__title");
+            var copy = root.querySelector(".nox-arena-death-notice__copy");
+            var killerName = details && details.killerName ? String(details.killerName).trim() : "";
+            if (noxArenaDeathRevealTimer) {
+                clearTimeout(noxArenaDeathRevealTimer);
+                noxArenaDeathRevealTimer = 0;
+            }
+            if (title) title.textContent = "Eliminated";
+            if (copy) copy.textContent = killerName ? "Consumed by " + killerName : "Your run is ending...";
+            root.classList.remove("is-settling");
+            root.classList.add("is-visible");
+            noxArenaDeathNoticeShownAt = Date.now();
+        }
+        function noxHideArenaDeathNotice() {
+            var root = document.getElementById("nox-arena-death-notice");
+            if (!root) return;
+            if (noxArenaDeathRevealTimer) {
+                clearTimeout(noxArenaDeathRevealTimer);
+                noxArenaDeathRevealTimer = 0;
+            }
+            root.classList.remove("is-settling");
+            root.classList.remove("is-visible");
+            noxArenaDeathNoticeShownAt = 0;
+        }
+        function noxRevealRunResults(result) {
+            var root = document.getElementById("nox-arena-death-notice");
+            var minVisibleMs = 1120;
+            var fadeOutMs = 240;
+            var elapsed = noxArenaDeathNoticeShownAt ? (Date.now() - noxArenaDeathNoticeShownAt) : minVisibleMs;
+            var waitBeforeFade = Math.max(0, minVisibleMs - elapsed);
+            if (noxArenaDeathRevealTimer) {
+                clearTimeout(noxArenaDeathRevealTimer);
+                noxArenaDeathRevealTimer = 0;
+            }
+            if (!root || !root.classList.contains("is-visible")) {
+                noxShowRunResults(result);
+                return;
+            }
+            noxArenaDeathRevealTimer = setTimeout(function() {
+                root.classList.add("is-settling");
+                noxArenaDeathRevealTimer = setTimeout(function() {
+                    noxHideArenaDeathNotice();
+                    noxShowRunResults(result);
+                }, fadeOutMs);
+            }, waitBeforeFade);
+        }
+        window.noxShowArenaDeathNotice = noxShowArenaDeathNotice;
+        window.noxHideArenaDeathNotice = noxHideArenaDeathNotice;
+        function noxBuildXpLevelState(totalXp) {
+            var xp = Math.max(0, Math.round(totalXp || 0));
+            var level = 1;
+            var requiredXp = 220;
+            while (xp >= requiredXp) {
+                xp -= requiredXp;
+                level += 1;
+                requiredXp = Math.min(1600, requiredXp + 120);
+            }
+            return {
+                level: level,
+                progressXp: xp,
+                requiredXp: requiredXp,
+                progress: requiredXp ? (xp / requiredXp) : 0
+            };
+        }
+        function noxBuildRunResult(summary, session) {
+            var lastRun = summary && summary.lastRun ? summary.lastRun : null;
+            var sessionStartedAt = session && session.startedAt ? session.startedAt : noxArenaFlowState.startedAt;
+            var fallbackSeconds = sessionStartedAt ? Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000)) : 0;
+            var totalXp = Math.max(0, Math.round(summary && summary.totalXp || 0));
+            var xpState = noxBuildXpLevelState(totalXp);
+            var skinName = noxResolveSkinSelection(summary && summary.skin ? summary.skin : (noxSelectedSkin || NOX_BASE_SKIN));
+            if (!lastRun) {
+                return {
+                    skin: skinName,
+                    totalXp: totalXp,
+                    level: xpState.level,
+                    xpProgress: xpState.progress,
+                    xpProgressValue: xpState.progressXp,
+                    xpRequired: xpState.requiredXp,
+                    xp: 0,
+                    coins: 0,
+                    kills: 0,
+                    timePlayedSeconds: fallbackSeconds
+                };
+            }
+            return {
+                skin: skinName,
+                totalXp: totalXp,
+                level: xpState.level,
+                xpProgress: xpState.progress,
+                xpProgressValue: xpState.progressXp,
+                xpRequired: xpState.requiredXp,
+                xp: Math.max(0, Math.round(lastRun.xpAwarded || 0)),
+                coins: Math.max(0, Math.round(lastRun.coinsAwarded || 0)),
+                kills: Math.max(0, Math.round(lastRun.kills || 0)),
+                timePlayedSeconds: Math.max(0, Math.round(lastRun.timePlayedSeconds || 0))
+            };
+        }
+        function noxShowRunResults(result) {
+            noxResetModalModes();
+            document.getElementById("inPageModal").classList.add("is-run-results");
+            document.getElementById("inPageModalTitle").textContent = "Battle Results";
+            document.getElementById("inPageModalBody").innerHTML =
+                "<div class='nox-run-results'>" +
+                    "<div class='nox-run-results__badge'>" +
+                        "<div class='nox-run-results__skin-wrap'>" +
+                            "<img class='nox-run-results__skin' src='" + noxSkinAssetPath(result.skin || NOX_BASE_SKIN) + "' alt='" + noxEscapeHtml(noxFormatSkinName(result.skin || NOX_BASE_SKIN)) + "'>" +
+                        "</div>" +
+                        "<div class='nox-run-results__label'>XP Gained</div>" +
+                        "<div class='nox-run-results__xp'>+" + (result.xp || 0).toLocaleString() + " XP</div>" +
+                        "<div class='nox-run-results__xp-meta'>Level " + (result.level || 1) + "</div>" +
+                        "<div class='nox-run-results__xp-track'><span style='width:" + Math.max(0, Math.min(100, Math.round((result.xpProgress || 0) * 100))) + "%'></span></div>" +
+                        "<div class='nox-run-results__xp-copy'>" + (result.xpProgressValue || 0).toLocaleString() + " / " + (result.xpRequired || 0).toLocaleString() + " XP</div>" +
+                    "</div>" +
+                    "<div class='nox-run-results__stats'>" +
+                        "<h3>Summary</h3>" +
+                        "<div class='nox-run-results__stats-grid'>" +
+                            "<div class='nox-run-results__stat'><span>Coins Earned</span><strong><i class='nox-run-results__icon nox-run-results__icon--coins' aria-hidden='true'></i>" + (result.coins || 0).toLocaleString() + "</strong></div>" +
+                            "<div class='nox-run-results__stat'><span>Kills</span><strong><i class='nox-run-results__icon nox-run-results__icon--kills' aria-hidden='true'></i>" + (result.kills || 0).toLocaleString() + "</strong></div>" +
+                            "<div class='nox-run-results__stat'><span>Time Spent</span><strong><i class='nox-run-results__icon nox-run-results__icon--time' aria-hidden='true'></i>" + noxFormatBattleTime(result.timePlayedSeconds || 0) + "</strong></div>" +
+                        "</div>" +
+                        "<div class='nox-run-results__actions'>" +
+                            "<button type='button' class='btn btn-primary nox-primary-action nox-primary-action--modal' onclick='noxContinueFromRunResults(); return false;'>Continue</button>" +
+                        "</div>" +
+                    "</div>" +
+                "</div>";
+            noxShowModal();
+        }
+        function noxLoadArenaResults(session, attempt) {
+            var safeAttempt = attempt || 0;
+            var profileName = session && session.profileName ? session.profileName : noxArenaFlowState.currentName || noxCurrentProfileName();
+            var startedAt = session && session.startedAt ? session.startedAt : noxArenaFlowState.startedAt;
+            noxFetchProfileProgressByName(profileName, function(summary) {
+                noxProfileState.summary = summary || noxCreateProfileSummary(profileName);
+                noxProfileState.currentName = profileName;
+                noxRenderProfileProgress();
+                var finishedAt = summary && summary.lastRun && summary.lastRun.finishedAt ? Date.parse(summary.lastRun.finishedAt) : 0;
+                if (safeAttempt < 8 && startedAt && (!finishedAt || finishedAt + 250 < startedAt)) {
+                    return setTimeout(function() {
+                        noxLoadArenaResults(session, safeAttempt + 1);
+                    }, 180);
+                }
+                noxArenaFlowState.lastResult = noxBuildRunResult(summary || noxCreateProfileSummary(profileName), session || {});
+                noxRevealRunResults(noxArenaFlowState.lastResult);
+            }, function() {
+                if (safeAttempt < 3) {
+                    return setTimeout(function() {
+                        noxLoadArenaResults(session, safeAttempt + 1);
+                    }, 180);
+                }
+                noxArenaFlowState.lastResult = noxBuildRunResult(noxCreateProfileSummary(profileName), session || {});
+                noxRevealRunResults(noxArenaFlowState.lastResult);
+            });
+        }
+        function noxOpenArenaExitPrompt() {
+            noxResetModalModes();
+            document.getElementById("inPageModal").classList.add("is-exit-confirm");
+            document.getElementById("inPageModalTitle").textContent = "Leave Match";
+            document.getElementById("inPageModalBody").innerHTML =
+                "<div class='nox-exit-confirm'>" +
+                    "<p>Are you sure you want to leave the current match?</p>" +
+                    "<div class='nox-exit-confirm__actions'>" +
+                        "<button type='button' class='btn nox-secondary-action nox-secondary-action--modal' onclick='noxHideModal(); return false;'>Continue</button>" +
+                        "<button type='button' class='btn btn-primary nox-primary-action nox-primary-action--modal' onclick='noxConfirmArenaExit(); return false;'>Exit</button>" +
+                    "</div>" +
+                "</div>";
+            noxShowModal();
+        }
+        function noxCloseArenaModal() {
+            var modal = document.getElementById("inPageModal");
+            if (!modal) return false;
+            if (!modal.classList.contains("is-exit-confirm")) return false;
+            noxHideModal();
+            return true;
+        }
+        function noxConfirmArenaExit() {
+            noxHideModal();
+            if (typeof window.noxPerformArenaExit === "function") window.noxPerformArenaExit();
+        }
+        function noxContinueFromRunResults() {
+            noxHideModal();
+            if (typeof window.noxReturnToLobby === "function") window.noxReturnToLobby();
+        }
+        window.noxOpenArenaExitPrompt = noxOpenArenaExitPrompt;
+        window.noxCloseArenaModal = noxCloseArenaModal;
+        window.noxConfirmArenaExit = noxConfirmArenaExit;
+        window.noxContinueFromRunResults = noxContinueFromRunResults;
+        window.noxOnArenaSessionStart = function(session) {
+            noxArenaFlowState.currentName = session && session.profileName ? session.profileName : noxCurrentProfileName();
+            noxArenaFlowState.startedAt = session && session.startedAt ? session.startedAt : Date.now();
+            noxArenaFlowState.mode = session && session.mode ? session.mode : "play";
+            noxArenaFlowState.lastResult = null;
+            noxResetModalModes();
+        };
+        window.noxHandleArenaDeath = function(session) {
+            noxArenaFlowState.currentName = session && session.profileName ? session.profileName : noxArenaFlowState.currentName;
+            noxArenaFlowState.startedAt = session && session.startedAt ? session.startedAt : noxArenaFlowState.startedAt;
+            noxLoadArenaResults(session || {}, 0);
+        };
+        function noxUpdateSelectedSkinUI() {
+            var status = document.getElementById("inventory-skin-status");
+            noxSelectedSkin = noxResolveSkinSelection(noxSelectedSkin);
+            if (status) status.textContent = "Equipped: " + noxFormatSkinName(noxSelectedSkin);
+            var cards = document.querySelectorAll(".nox-skin-card");
+            for (var i = 0; i < cards.length; i++) {
+                cards[i].classList.toggle("is-equipped", cards[i].getAttribute("data-skin") === noxSelectedSkin);
+            }
+            noxApplySelectedSkinPreview();
+        }
+        function noxApplySelectedSkinPreview() {
+            var orbs = document.querySelectorAll("[data-skin-preview]");
+            var activeSkin = noxResolveSkinSelection(noxSelectedSkin);
+            for (var i = 0; i < orbs.length; i++) {
+                var orbImage = orbs[i].querySelector(".nox-orb__skin");
+                if (orbImage) {
+                    orbImage.src = noxSkinAssetPath(activeSkin);
+                    orbImage.alt = noxFormatSkinName(activeSkin);
+                }
+                orbs[i].classList.add("has-skin");
+            }
+        }
+        function noxRenderInventorySkins() {
+            var grid = document.getElementById("inventory-skins-grid");
+            if (!grid) return;
+            var library = noxSkinLibrary();
+            if (!library.length) {
+                grid.innerHTML = "<div class='nox-skin-card nox-skin-card--empty'><span>No skins found in the local library.</span></div>";
+                return;
+            }
+            grid.innerHTML = library.map(function(skinName) {
+                var rarity = noxSkinRarity(skinName);
+                var edition = noxSkinEdition(skinName, rarity);
+                var encodedSkin = encodeURIComponent(skinName);
+                var displayName = noxFormatSkinName(skinName);
+                return "<button type='button' class='nox-skin-card" + (noxSelectedSkin === skinName ? " is-equipped" : "") + "' data-skin='" + noxEscapeHtml(skinName) + "'>" +
+                    "<span class='nox-skin-card__serial'>#" + edition.current + "</span>" +
+                    "<div class='nox-skin-card__art'><img loading='lazy' src='" + noxSkinAssetPath(skinName) + "' alt='" + noxEscapeHtml(displayName) + "'></div>" +
+                    "<div class='nox-skin-card__meta'>" +
+                        "<span class='nox-skin-card__rarity nox-skin-card__rarity--" + rarity.toLowerCase() + "'>" + rarity + "</span>" +
+                        "<strong class='nox-skin-card__title'>" + noxEscapeHtml(displayName) + "</strong>" +
+                    "</div>" +
+                "</button>";
+            }).join("");
+            noxUpdateSelectedSkinUI();
+        }
+        function openNoxSkinModal(encodedSkinName) {
+            var skinName = decodeURIComponent(encodedSkinName);
+            var rarity = noxSkinRarity(skinName);
+            var edition = noxSkinEdition(skinName, rarity);
+            var displayName = noxFormatSkinName(skinName);
+            var isEquipped = noxSelectedSkin === skinName;
+            document.getElementById("inPageModal").classList.add("is-skin-view");
+            document.getElementById("inPageModalTitle").textContent = "Skin Locker";
+            document.getElementById("inPageModalBody").innerHTML =
+                "<div class='nox-skin-modal'>" +
+                    "<div class='nox-skin-modal__art-wrap'>" +
+                        "<img class='nox-skin-modal__art' src='" + noxSkinAssetPath(skinName) + "' alt='" + noxEscapeHtml(displayName) + "'>" +
+                    "</div>" +
+                    "<span class='nox-skin-card__rarity nox-skin-card__rarity--" + rarity.toLowerCase() + "'>" + rarity + "</span>" +
+                    "<h3 class='nox-skin-modal__title'>" + noxEscapeHtml(displayName) + "</h3>" +
+                    "<p class='nox-skin-modal__copy'>" + noxEscapeHtml(noxSkinDescription(skinName, rarity)) + "</p>" +
+                    "<div class='nox-skin-modal__edition'>#" + edition.current + " of #" + edition.total + "</div>" +
+                    "<button type='button' class='btn btn-primary nox-primary-action nox-primary-action--modal" + (isEquipped ? " is-equipped" : "") + "' onclick=\"useNoxSkin('" + encodedSkinName + "'); return false;\">" + (isEquipped ? "Using" : "Use") + "</button>" +
+                "</div>";
+            noxShowModal();
+        }
+        function useNoxSkin(encodedSkinName) {
+            noxSelectedSkin = noxResolveSkinSelection(decodeURIComponent(encodedSkinName));
+            noxPersistSelectedSkin();
+            noxUpdateSelectedSkinUI();
+            document.getElementById("inPageModal").classList.remove("is-skin-view");
+            noxHideModal();
+        }
+        function syncCallsignPreview(value) {
+            var nextValue = noxAuthState.session && noxAuthState.session.nameLocked ? noxAuthState.session.displayName : noxExtractPlayerIdentity(value).name;
+            if (!nextValue) nextValue = "Pilot-07";
+            var profileName = document.getElementById("profile-callsign");
+            var centerName = document.getElementById("center-callsign");
+            var initials = document.getElementById("orb-initials");
+            var inventoryInitials = document.getElementById("inventory-orb-initials");
+            if (profileName) profileName.textContent = nextValue;
+            if (centerName) centerName.textContent = nextValue;
+            if (initials) initials.textContent = nextValue.slice(0, 2).toUpperCase();
+            if (inventoryInitials) inventoryInitials.textContent = nextValue.slice(0, 2).toUpperCase();
+            noxRenderRanking();
+            noxLoadProfileProgress(false);
+        }
+        function showLobbyNotice(title, message) {
+            noxResetModalModes();
+            document.getElementById("inPageModalTitle").textContent = title;
+            document.getElementById("inPageModalBody").innerHTML = "<p>" + message + "</p>";
+            noxShowModal();
+        }
+        function toggleProfileAbilities() {
+            $("#profile-abilities-body").stop(true, true).slideToggle(180);
+            $("#abilities-toggle").toggleClass("is-open");
+        }
+        function switchLobbyPanel(panelName, tabButton) {
+            var panelOrder = ["home", "inventory", "marketplace", "ranking", "news", "support", "settings"];
+            var panels = document.querySelectorAll(".nox-center-panel");
+            var tabs = document.querySelectorAll(".nox-panel-trigger");
+            var panel = document.getElementById("panel-" + panelName);
+            var current = document.querySelector(".nox-center-panel.is-active");
+            var currentName = current ? current.getAttribute("data-panel-name") : "home";
+            var currentIndex = panelOrder.indexOf(currentName);
+            var nextIndex = panelOrder.indexOf(panelName);
+            var direction = nextIndex >= currentIndex ? "forward" : "backward";
+
+            for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("is-active");
+            if (tabButton) tabButton.classList.add("is-active");
+            if (!panel) return;
+            if (current === panel) return;
+
+            for (var j = 0; j < panels.length; j++) {
+                panels[j].classList.remove("is-leaving-left", "is-leaving-right", "is-pre-enter-left", "is-pre-enter-right");
+            }
+
+            panel.classList.add(direction === "forward" ? "is-pre-enter-right" : "is-pre-enter-left");
+            requestAnimationFrame(function() {
+                if (current) current.classList.add(direction === "forward" ? "is-leaving-left" : "is-leaving-right");
+                panel.classList.add("is-active");
+                panel.classList.remove("is-pre-enter-right", "is-pre-enter-left");
+                if (panelName === "ranking") noxLoadRankingData(true);
+                setTimeout(function() {
+                    if (current) current.classList.remove("is-active", "is-leaving-left", "is-leaving-right");
+                }, 260);
+            });
+        }
+        function switchInventoryTab(tabName, tabButton) {
+            var tabs = document.querySelectorAll(".nox-inventory-tabs .nox-subtab");
+            var panels = document.querySelectorAll(".nox-inventory-content");
+            for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("is-active");
+            for (var j = 0; j < panels.length; j++) panels[j].classList.remove("is-active");
+            var panel = document.getElementById("inventory-" + tabName);
+            if (panel) panel.classList.add("is-active");
+            if (tabButton) tabButton.classList.add("is-active");
+        }
+        function noxGetRankingEndpoint() {
+            var host = "127.0.0.1:15003";
+            var serverField = document.getElementById("gamemode");
+            if (serverField && serverField.value) host = serverField.value.trim();
+            if (!/^https?:\/\//i.test(host)) host = "http://" + host;
+            return host.replace(/\/+$/, "") + "/nox/rankings";
+        }
+        function noxRankingName() {
+            if (noxAuthState.session && noxAuthState.session.nameLocked) return String(noxAuthState.session.displayName || "").trim().toLowerCase();
+            var nickInput = document.getElementById("nick");
+            return noxExtractPlayerIdentity(nickInput ? nickInput.value : "").name.trim().toLowerCase();
+        }
+        function noxRankingInitials(name) {
+            var cleanName = (name || "-").trim();
+            if (!cleanName || cleanName === "-") return "--";
+            var parts = cleanName.split(/\s+/).filter(Boolean);
+            if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+            return cleanName.slice(0, 2).toUpperCase();
+        }
+        function noxGetRankingEntries() {
+            if (!noxRankingState.snapshot) return [];
+            if (noxRankingState.view === "weekly") return noxRankingState.snapshot.weeklyTop100 || [];
+            if (noxRankingState.view === "daily") return noxRankingState.snapshot.dailyTop100 || [];
+            return noxRankingState.snapshot.overallTop100 || [];
+        }
+        function noxSyncRankingTabs() {
+            var isWeekly = noxRankingState.view === "weekly",
+                isDaily = noxRankingState.view === "daily";
+            var topWeekly = document.getElementById("nox-ranking-tab-weekly");
+            var topOverall = document.getElementById("nox-ranking-tab-overall");
+            var boardWeekly = document.getElementById("nox-ranking-board-weekly");
+            var boardOverall = document.getElementById("nox-ranking-board-overall");
+            var boardDaily = document.getElementById("nox-ranking-board-daily");
+            if (topWeekly) topWeekly.classList.toggle("is-active", isWeekly);
+            if (topOverall) topOverall.classList.toggle("is-active", !isWeekly && !isDaily);
+            if (boardWeekly) boardWeekly.classList.toggle("is-active", isWeekly);
+            if (boardOverall) boardOverall.classList.toggle("is-active", !isWeekly && !isDaily);
+            if (boardDaily) boardDaily.classList.toggle("is-active", isDaily);
+        }
+        function noxRankingAvatarMarkup(entry, className) {
+            var safeClassName = className || "";
+            if (!entry) return "<span class='" + safeClassName + "'>--</span>";
+            var skinName = noxResolveSkinSelection(entry.skin || NOX_BASE_SKIN);
+            if (skinName) {
+                return "<span class='" + safeClassName + " has-skin'><img class='" + safeClassName + "-image' src='" + noxSkinAssetPath(skinName) + "' alt='" + noxEscapeHtml(noxFormatSkinName(skinName)) + "'></span>";
+            }
+            return "<span class='" + safeClassName + "'>" + noxEscapeHtml(noxRankingInitials(entry.name)) + "</span>";
+        }
+        function noxRenderRankingPodium(entries) {
+            var stage = document.getElementById("nox-ranking-podium-stage");
+            if (!stage) return;
+            var slots = [{
+                modifier: "second",
+                place: 2,
+                entry: entries[1] || null
+            }, {
+                modifier: "first",
+                place: 1,
+                entry: entries[0] || null
+            }, {
+                modifier: "third",
+                place: 3,
+                entry: entries[2] || null
+            }];
+            stage.innerHTML = slots.map(function(slot) {
+                var entry = slot.entry;
+                return "<div class='nox-podium-slot nox-podium-slot--" + slot.modifier + (entry ? "" : " is-empty") + "'>" +
+                    noxRankingAvatarMarkup(entry, "nox-podium-avatar") +
+                    "<div class='nox-podium-name'>" + noxEscapeHtml(entry ? entry.name : "-") + "</div>" +
+                    "<div class='nox-podium-block'>" +
+                        "<div class='nox-podium-place'>" + slot.place + "</div>" +
+                        "<div class='nox-podium-score'>" + (entry ? entry.score : "-") + "</div>" +
+                    "</div>" +
+                "</div>";
+            }).join("");
+        }
+        function noxRenderRankingList(entries) {
+            var list = document.getElementById("nox-ranking-list");
+            if (!list) return;
+            var currentName = noxRankingName(),
+                rows = entries.slice(0, 100),
+                targetLength = Math.max(rows.length, 10);
+            while (rows.length < targetLength) rows.push(null);
+            list.innerHTML = rows.map(function(entry, index) {
+                var isSelf = !!(entry && currentName && entry.name && entry.name.trim().toLowerCase() === currentName),
+                    topRank = index < 3,
+                    rankMarkup = topRank ? "<span class='nox-ranking-row__medal'>" + (index + 1) + "</span>" : "<span class='nox-ranking-row__rank'>" + (index + 1) + "</span>",
+                    subtitle = entry ? (entry.kills + " kills") : "-",
+                    score = entry ? entry.score : "-";
+                return "<div class='nox-ranking-row" + (isSelf ? " is-self" : "") + (entry ? "" : " is-empty") + "'>" +
+                    "<div class='nox-ranking-row__left'>" +
+                        rankMarkup +
+                        noxRankingAvatarMarkup(entry, "nox-ranking-row__avatar") +
+                        "<div class='nox-ranking-row__meta'>" +
+                            "<strong>" + noxEscapeHtml(entry ? entry.name : "-") + "</strong>" +
+                            "<span>" + noxEscapeHtml(subtitle) + "</span>" +
+                        "</div>" +
+                    "</div>" +
+                    "<div class='nox-ranking-row__score'>" + score + "</div>" +
+                "</div>";
+            }).join("");
+        }
+        function noxRenderRankingSelf(entries) {
+            var selfValue = document.getElementById("nox-ranking-self-value");
+            if (!selfValue) return;
+            var currentName = noxRankingName(),
+                match = null;
+            for (var i = 0; i < entries.length; i++) {
+                if (!entries[i] || !entries[i].name) continue;
+                if (entries[i].name.trim().toLowerCase() === currentName) {
+                    match = entries[i];
+                    break;
+                }
+            }
+            selfValue.textContent = match ? match.score : "-";
+        }
+        function noxRenderRanking() {
+            var entries = noxGetRankingEntries();
+            noxSyncRankingTabs();
+            noxRenderRankingPodium(entries);
+            noxRenderRankingList(entries);
+            noxRenderRankingSelf(entries);
+        }
+        function noxSetRankingView(view) {
+            if (view !== "weekly" && view !== "overall" && view !== "daily") return;
+            noxRankingState.view = view;
+            noxRenderRanking();
+            noxLoadRankingData(true);
+        }
+        function noxLoadRankingData(force) {
+            if (noxRankingState.loading) return;
+            if (!force && noxRankingState.snapshot) return noxRenderRanking();
+            noxRankingState.loading = true;
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", noxGetRankingEndpoint() + "?t=" + Date.now(), true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) return;
+                noxRankingState.loading = false;
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        noxRankingState.snapshot = JSON.parse(xhr.responseText);
+                    } catch (error) {
+                        noxRankingState.snapshot = {
+                            dailyTop100: [],
+                            weeklyTop100: [],
+                            overallTop100: []
+                        };
+                    }
+                } else if (!noxRankingState.snapshot) {
+                    noxRankingState.snapshot = {
+                        dailyTop100: [],
+                        weeklyTop100: [],
+                        overallTop100: []
+                    };
+                }
+                noxRenderRanking();
+            };
+            xhr.onerror = function() {
+                noxRankingState.loading = false;
+                if (!noxRankingState.snapshot) noxRankingState.snapshot = {
+                    dailyTop100: [],
+                    weeklyTop100: [],
+                    overallTop100: []
+                };
+                noxRenderRanking();
+            };
+            xhr.send();
+        }
+        function noxSupportEndpoint() {
+            return noxGetRankingEndpoint().replace(/\/nox\/rankings$/, "/nox/support/report");
+        }
+        function noxSetSupportStatus(tone, text) {
+            var node = document.getElementById("nox-support-status");
+            if (!node) return;
+            node.className = "nox-support-status" + (tone ? " is-" + tone : "");
+            node.textContent = text;
+        }
+        function noxResetSupportPreview() {
+            var preview = document.getElementById("nox-support-preview");
+            var image = document.getElementById("nox-support-preview-image");
+            if (!preview || !image) return;
+            noxSupportScreenshotData = "";
+            image.removeAttribute("src");
+            preview.classList.remove("has-image");
+        }
+        function noxApplySupportPreview(dataUrl) {
+            var preview = document.getElementById("nox-support-preview");
+            var image = document.getElementById("nox-support-preview-image");
+            if (!preview || !image) return;
+            noxSupportScreenshotData = dataUrl || "";
+            if (!noxSupportScreenshotData) return noxResetSupportPreview();
+            image.src = noxSupportScreenshotData;
+            preview.classList.add("has-image");
+        }
+        function noxReadSupportImage(file) {
+            if (!file) return;
+            if (!/^image\//i.test(file.type || "")) return noxSetSupportStatus("error", "Use an image file for screenshots.");
+            var reader = new FileReader();
+            reader.onload = function(event) {
+                noxApplySupportPreview(event.target.result);
+                noxSetSupportStatus("", "Screenshot attached.");
+            };
+            reader.readAsDataURL(file);
+        }
+        function noxHandleSupportFile(input) {
+            if (!input || !input.files || !input.files[0]) return;
+            noxReadSupportImage(input.files[0]);
+        }
+        function noxHandleSupportPaste(event) {
+            var items = (event.clipboardData && event.clipboardData.items) || [];
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type && items[i].type.indexOf("image/") === 0) {
+                    event.preventDefault();
+                    noxReadSupportImage(items[i].getAsFile());
+                    return;
+                }
+            }
+        }
+        function noxSubmitSupportReport() {
+            var category = document.getElementById("nox-support-category");
+            var priority = document.getElementById("nox-support-priority");
+            var description = document.getElementById("nox-support-description");
+            var reportText = description ? description.value.trim() : "";
+            if (!reportText) return noxSetSupportStatus("error", "Describe the issue before sending it.");
+            noxSetSupportStatus("", "Sending report...");
+            var payload = {
+                username: noxCurrentProfileName(),
+                category: category ? category.value : "bug",
+                priority: priority ? priority.value : "normal",
+                description: reportText,
+                page: "support",
+                localTime: new Date().toISOString(),
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+                userAgent: navigator.userAgent || "",
+                screenshotDataUrl: noxSupportScreenshotData || ""
+            };
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", noxSupportEndpoint(), true);
+            xhr.withCredentials = true;
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) return;
+                var response = {};
+                try {
+                    response = JSON.parse(xhr.responseText || "{}");
+                } catch (error) {
+                }
+                if (xhr.status >= 200 && xhr.status < 300 && response.ok) {
+                    if (description) description.value = "";
+                    var fileInput = document.getElementById("nox-support-file");
+                    if (fileInput) fileInput.value = "";
+                    noxResetSupportPreview();
+                    noxSetSupportStatus("success", response.message || "Report sent.");
+                    showLobbyNotice("Support Report Sent", "Issue " + response.id + " was saved. " + (response.message || ""));
+                    return;
+                }
+                noxSetSupportStatus("error", response.error || "Support report could not be sent.");
+            };
+            xhr.onerror = function() {
+                noxSetSupportStatus("error", "Support relay is unreachable right now.");
+            };
+            xhr.send(JSON.stringify(payload));
+        }
+        function noxRenderNewsCards() {
+            var grid = document.getElementById("nox-news-grid");
+            if (!grid) return;
+            grid.innerHTML = noxNewsLibrary.map(function(item) {
+                return "<article class='nox-news-card'>" +
+                    "<div class='nox-news-card__art " + item.art + "' aria-hidden='true'></div>" +
+                    "<div class='nox-news-card__body'>" +
+                        "<div class='nox-news-card__eyebrow'>" + noxEscapeHtml(item.eyebrow) + "</div>" +
+                        "<h3 class='nox-news-card__title'>" + noxEscapeHtml(item.title) + "</h3>" +
+                        "<p class='nox-news-card__copy'>" + noxEscapeHtml(item.excerpt) + "</p>" +
+                        "<button type='button' class='nox-news-card__action' onclick=\"noxOpenNewsModal('" + noxEscapeHtml(item.id) + "'); return false;\">Read More</button>" +
+                    "</div>" +
+                "</article>";
+            }).join("");
+        }
+        function noxOpenNewsModal(newsId) {
+            var item = null;
+            for (var i = 0; i < noxNewsLibrary.length; i++) {
+                if (noxNewsLibrary[i].id === newsId) {
+                    item = noxNewsLibrary[i];
+                    break;
+                }
+            }
+            if (!item) return;
+            var modal = document.getElementById("inPageModal");
+            modal.classList.remove("is-skin-view");
+            modal.classList.add("is-news-view");
+            document.getElementById("inPageModalTitle").textContent = item.eyebrow;
+            document.getElementById("inPageModalBody").innerHTML =
+                "<div class='nox-news-modal'>" +
+                    "<div class='nox-news-modal__art " + item.art + "' aria-hidden='true'></div>" +
+                    "<h3 class='nox-news-modal__title'>" + noxEscapeHtml(item.title) + "</h3>" +
+                    "<p class='nox-news-modal__copy'>" + noxEscapeHtml(item.body) + "</p>" +
+                "</div>";
+            noxShowModal();
+        }
+        function noxAdminBaseUrl() {
+            var params = new URLSearchParams(window.location.search || "");
+            var ip = params.get("ip") || "127.0.0.1:15003";
+            return (window.location.protocol === "https:" ? "https://" : "http://") + ip.replace(/^ws(s)?:\/\//, "");
+        }
+        function noxSyncAdminAccessButton() {
+            var button = document.getElementById("nox-admin-launch");
+            if (!button) return;
+            button.style.display = "none";
+            fetch(noxAdminBaseUrl() + "/admin/api/session", {
+                credentials: "include"
+            }).then(function(response) {
+                return response.json();
+            }).then(function(data) {
+                if (!data || !data.authenticated) return;
+                button.href = noxAdminBaseUrl() + "/admin";
+                button.style.display = "";
+            }).catch(function() {
+            });
+        }
+        window.addEventListener("load", function() {
+            setTimeout(function() {
+                var nickInput = document.getElementById("nick");
+                if (nickInput) {
+                    var parsed = noxExtractPlayerIdentity(nickInput.value);
+                    var storedSkin = window.localStorage ? window.localStorage.getItem("nox-selected-skin") : null;
+                    noxSelectedSkin = noxResolveSkinSelection(parsed.skin || storedSkin || NOX_BASE_SKIN);
+                    if (parsed.skin) {
+                        nickInput.value = parsed.name;
+                        if (window.localStorage) window.localStorage.setItem("checkbox-0", parsed.name);
+                    }
+                    syncCallsignPreview(nickInput.value);
+                }
+                noxRenderInventorySkins();
+                noxRenderRanking();
+                noxLoadRankingData(false);
+                noxRenderNewsCards();
+                noxLoadClientConfig().then(function() {
+                    return noxBootstrapPlayerAuth();
+                }).then(function() {
+                    noxLoadProfileProgress(true);
+                }).catch(function(error) {
+                    console.warn("NOX auth bootstrap failed:", error && error.message ? error.message : error);
+                    if (!noxAuthState.isTelegramMiniApp) {
+                        noxSetPlayReady(true);
+                        noxLoadProfileProgress(true);
+                    } else showLobbyNotice("Telegram Auth", error && error.message ? error.message : "Telegram auth could not be completed.");
+                });
+            }, 0);
+            document.addEventListener("pointerdown", noxPrimeMusic, { passive: true });
+            document.addEventListener("keydown", noxPrimeMusic, { passive: true });
+            document.addEventListener("visibilitychange", function() {
+                if (document.hidden) noxStopMusicPlayback();
+                else noxStartMusicPlayback();
+            });
+            document.addEventListener("fullscreenchange", noxSyncFullscreenUI);
+            document.addEventListener("webkitfullscreenchange", noxSyncFullscreenUI);
+            if (window.localStorage) {
+                noxMusicEnabled = window.localStorage.getItem("nox-music-enabled") === "true";
+                var storedMusicVolume = parseFloat(window.localStorage.getItem("nox-music-volume"));
+                if (isFinite(storedMusicVolume)) noxMusicVolume = Math.max(0, Math.min(1, storedMusicVolume));
+            }
+            noxSyncMusicToggleUI();
+            noxSyncFullscreenUI();
+            noxSyncAdminAccessButton();
+            var musicSlider = document.getElementById("nox-music-volume");
+            if (musicSlider) {
+                musicSlider.value = noxMusicVolume;
+                musicSlider.addEventListener("input", noxSyncMusicVolumeUI);
+            }
+            noxSyncMusicVolumeUI();
+            if (window.wjQuery && wjQuery.fn) {
+                wjQuery("#inPageModal").on("hidden.bs.modal", function() {
+                    this.classList.remove("is-skin-view");
+                    this.classList.remove("is-news-view");
+                    this.classList.remove("is-exit-confirm");
+                    this.classList.remove("is-run-results");
+                });
+            }
+            document.getElementById("inventory-skins-grid").addEventListener("click", function(event) {
+                var card = event.target.closest(".nox-skin-card");
+                if (!card) return;
+                event.preventDefault();
+                openNoxSkinModal(encodeURIComponent(card.getAttribute("data-skin")));
+            });
+            document.querySelector("#inPageModal .close").addEventListener("click", function(event) {
+                if (!window.wjQuery || !wjQuery.fn || !wjQuery.fn.modal) {
+                    event.preventDefault();
+                    noxHideModal();
+                }
+            });
+            document.querySelector("#inPageModal .modal-footer button").addEventListener("click", function(event) {
+                if (!window.wjQuery || !wjQuery.fn || !wjQuery.fn.modal) {
+                    event.preventDefault();
+                    noxHideModal();
+                }
+            });
+        });
+    </script>
+</head>
+<body class="lobby-mode">
+    <div class="modal fade" id="inPageModal" role="dialog">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    <h4 id="inPageModalTitle" class="modal-title">Failed to Load</h4>
+                </div>
+                <div id="inPageModalBody" class="modal-body">
+                    <p>Failed to load. Please check your connection!</p>
+                    <div class="center">
+                        <div class="loader"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="nox-arena-death-notice" class="nox-arena-death-notice" aria-live="polite" aria-atomic="true">
+        <div class="nox-arena-death-notice__panel">
+            <div class="nox-arena-death-notice__title">Eliminated</div>
+            <div class="nox-arena-death-notice__copy">Your run is ending...</div>
+        </div>
+    </div>
+    <div id="overlays">
+        <div id="helloDialog">
+            <div class="nox-topbar">
+                <div class="nox-topbar__brand">
+                    <div class="nox-mark" aria-hidden="true"></div>
+                    <div>
+                        <div class="nox-eyebrow">Battle Arena</div>
+                        <h1 id="title">NOX</h1>
+                    </div>
+                </div>
+                <nav class="nox-topbar__nav" aria-label="Primary">
+                    <button type="button" class="nox-tab nox-panel-trigger is-active" onclick="switchLobbyPanel('home', this); return false;">Home</button>
+                    <button type="button" class="nox-tab nox-panel-trigger" onclick="switchLobbyPanel('inventory', this); return false;">Inventory</button>
+                    <button type="button" class="nox-tab nox-panel-trigger" onclick="switchLobbyPanel('marketplace', this); return false;">Marketplace</button>
+                    <button type="button" class="nox-tab nox-panel-trigger" onclick="switchLobbyPanel('ranking', this); return false;">Ranking</button>
+                    <button type="button" class="nox-tab nox-panel-trigger" onclick="switchLobbyPanel('news', this); return false;">News</button>
+                    <button type="button" class="nox-tab nox-panel-trigger" onclick="switchLobbyPanel('support', this); return false;">Support</button>
+                </nav>
+                <div class="nox-topbar__meta">
+                    <div class="nox-coin-chip">
+                        <span class="nox-coin-chip__icon" aria-hidden="true"></span>
+                        <strong id="nox-coin-balance">0</strong>
+                    </div>
+                    <button type="button" class="nox-settings-trigger nox-panel-trigger" onclick="switchLobbyPanel('settings', this); return false;">
+                        <i class="glyphicon glyphicon-cog"></i>
+                        <span>Settings</span>
+                    </button>
+                </div>
+            </div>
+            <div class="nox-lobby-grid">
+                <aside class="nox-panel nox-panel--profile">
+                    <div class="nox-panel__header">
+                        <div>
+                            <h2 class="nox-panel__title">Profile</h2>
+                        </div>
+                    </div>
+
+                    <div class="nox-profile-block">
+                        <div class="nox-orb nox-orb--compact" data-skin-preview="profile">
+                            <img class="nox-orb__skin" alt="" />
+                            <span id="orb-initials">PI</span>
+                        </div>
+                        <div class="nox-profile-meta">
+                            <div class="nox-profile-name" id="profile-callsign">Pilot-07</div>
+                            <div class="nox-profile-level" id="profile-level-copy">LEVEL 1</div>
+                            <div class="nox-progress">
+                                <span id="profile-xp-progress" style="width:0%;"></span>
+                            </div>
+                            <div class="nox-progress-copy" id="profile-xp-copy">0 / 220 XP</div>
+                        </div>
+                    </div>
+
+                    <div class="nox-resource-row">
+                        <div class="nox-resource-chip">
+                            <span class="nox-resource-visual">
+                                <span class="nox-resource-icon-wrap"><img src="assets/icons/freeze.png" alt="Freeze" class="nox-resource-icon"></span>
+                            </span>
+                            <strong id="nox-resource-freezes">0</strong>
+                            <span class="nox-resource-name">Freezes</span>
+                        </div>
+                        <div class="nox-resource-chip">
+                            <span class="nox-resource-visual">
+                                <span class="nox-resource-icon-wrap"><img src="assets/icons/shield.png" alt="Shield" class="nox-resource-icon"></span>
+                            </span>
+                            <strong id="nox-resource-shields">0</strong>
+                            <span class="nox-resource-name">Shields</span>
+                        </div>
+                        <div class="nox-resource-chip">
+                            <span class="nox-resource-visual">
+                                <span class="nox-resource-icon-wrap"><img src="assets/icons/spike.png" alt="Spike" class="nox-resource-icon"></span>
+                            </span>
+                            <strong id="nox-resource-spikes">0</strong>
+                            <span class="nox-resource-name">Spikes</span>
+                        </div>
+                    </div>
+
+                    <section class="nox-section">
+                        <button type="button" class="nox-section__heading nox-section__heading--button" onclick="toggleProfileAbilities(); return false;">
+                            <span>Abilities</span>
+                            <span class="nox-section__toggle" id="abilities-toggle" aria-hidden="true">
+                                <i class="glyphicon glyphicon-chevron-down"></i>
+                            </span>
+                        </button>
+                        <div id="profile-abilities-body" style="display:none;">
+                            <div class="nox-section__subcopy">Boost your profile abilities. Live now: Speed, Mass, Shield, Freeze, Spike, and Mass Eject Cooldown. Split Cooldown is still preparing.</div>
+                            <div class="nox-ability-list">
+                                <div class="nox-ability-row" data-ability-key="speed">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--speed" aria-hidden="true"><span class="glyphicon glyphicon-flash"></span></span><span>Speed</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-speed" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-speed">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-speed" onclick="noxUpgradeAbility('speed'); return false;" title="Upgrade Speed">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="mass">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--mass" aria-hidden="true"><span class="glyphicon glyphicon-record"></span></span><span>Mass</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-mass" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-mass">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-mass" onclick="noxUpgradeAbility('mass'); return false;" title="Upgrade Mass">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="shieldCooldown">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--shield-cooldown" aria-hidden="true"><span class="glyphicon glyphicon-certificate"></span></span><span>Shield Cooldown</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-shieldCooldown" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-shieldCooldown">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-shieldCooldown" onclick="noxUpgradeAbility('shieldCooldown'); return false;" title="Upgrade Shield Cooldown">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="shieldDuration">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--shield-duration" aria-hidden="true"><span class="glyphicon glyphicon-unchecked"></span></span><span>Shield Duration</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-shieldDuration" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-shieldDuration">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-shieldDuration" onclick="noxUpgradeAbility('shieldDuration'); return false;" title="Upgrade Shield Duration">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="spikeCooldown">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--spike-cooldown" aria-hidden="true"><span class="glyphicon glyphicon-screenshot"></span></span><span>Spike Cooldown</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-spikeCooldown" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-spikeCooldown">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-spikeCooldown" onclick="noxUpgradeAbility('spikeCooldown'); return false;" title="Upgrade Spike Cooldown">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="freezeCooldown">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--freeze-cooldown" aria-hidden="true"><span class="glyphicon glyphicon-asterisk"></span></span><span>Freeze Cooldown</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-freezeCooldown" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-freezeCooldown">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-freezeCooldown" onclick="noxUpgradeAbility('freezeCooldown'); return false;" title="Upgrade Freeze Cooldown">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="freezeDuration">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--freeze-duration" aria-hidden="true"><span class="glyphicon glyphicon-certificate"></span></span><span>Freeze Duration</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-freezeDuration" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-freezeDuration">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-freezeDuration" onclick="noxUpgradeAbility('freezeDuration'); return false;" title="Upgrade Freeze Duration">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="splitCooldown">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--split-cooldown" aria-hidden="true"><span class="glyphicon glyphicon-resize-full"></span></span><span>Split Cooldown</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-splitCooldown" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-splitCooldown">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-splitCooldown" onclick="noxUpgradeAbility('splitCooldown'); return false;" title="Upgrade Split Cooldown">+</button>
+                                    </div>
+                                </div>
+                                <div class="nox-ability-row" data-ability-key="massEjectCooldown">
+                                    <div class="nox-ability-copy">
+                                        <div class="nox-ability-name"><span class="nox-ability-icon nox-ability-icon--mass-eject-cooldown" aria-hidden="true"><span class="glyphicon glyphicon-share-alt"></span></span><span>Mass Eject Cooldown</span></div>
+                                        <div class="nox-progress nox-progress--thin"><span id="nox-ability-bar-massEjectCooldown" style="width:0%;"></span></div>
+                                    </div>
+                                    <div class="nox-ability-meta">
+                                        <span class="nox-level-badge" id="nox-ability-level-massEjectCooldown">Lv. 0 / 50</span>
+                                        <button type="button" class="nox-upgrade-btn" id="nox-ability-upgrade-massEjectCooldown" onclick="noxUpgradeAbility('massEjectCooldown'); return false;" title="Upgrade Mass Eject Cooldown">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <button type="button" id="spectate-btn" onclick="spectate(); return false;" class="btn btn-warning btn-needs-server nox-secondary-action">Spectate</button>
+                    <div class="nox-profile-footer">
+                        <a href="https://noxgar.com/terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+                        <span>|</span>
+                        <a href="https://noxgar.com/copyright.html" target="_blank" rel="noopener noreferrer">Copyright</a>
+                    </div>
+                </aside>
+
+                <div class="nox-center-stack">
+                    <section class="nox-panel nox-panel--play nox-center-panel is-active" id="panel-home" data-panel-name="home">
+                        <div class="nox-play-header nox-play-header--home">
+                            <div class="nox-play-status nox-play-status--online">
+                                <span class="nox-live-dot" aria-hidden="true"></span>
+                                <span>Online 20+</span>
+                            </div>
+                        </div>
+
+                        <div class="nox-home-grid">
+                            <div class="nox-home-shell">
+                                <div class="nox-home-identity">
+                                    <div class="nox-orb nox-orb--hero" data-skin-preview="hero">
+                                        <img class="nox-orb__skin" alt="" />
+                                        <span>NOX</span>
+                                    </div>
+                                    <div class="nox-center-callsign" id="center-callsign">Pilot-07</div>
+                                </div>
+
+                                <form role="form" class="nox-deploy-form nox-home-form">
+                                    <div class="nox-input-stack">
+                                        <label for="nick">Username</label>
+                                        <input id="nick" class="form-control save" data-box-id="0" placeholder="Enter username" maxlength="30" oninput="syncCallsignPreview(this.value)" />
+                                    </div>
+                                    <div class="nox-hidden-field" aria-hidden="true">
+                                        <select id="gamemode" class="form-control" onchange="setServer($(this).val());">
+                                            <option value="127.0.0.1:15003">NOX Local Arena (15003)</option>
+                                        </select>
+                                    </div>
+
+                                    <button type="button" id="play-btn" disabled onclick="play(noxComposePlayName(document.getElementById('nick').value)); return false;" class="btn btn-play btn-primary btn-needs-server nox-primary-action is-disabled">
+                                        <span class="nox-primary-action__icon" aria-hidden="true"></span>
+                                        <span class="nox-primary-action__label">Play</span>
+                                    </button>
+
+                                    <div class="nox-social-row nox-social-row--compact" id="nox-social-row">
+                                        <button type="button" class="nox-social-btn" onclick="return noxHandleTelegramConnect();">
+                                            <span class="nox-social-mark nox-social-mark--telegram" aria-hidden="true">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" focusable="false" aria-hidden="true">
+                                                    <path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"></path>
+                                                </svg>
+                                            </span>
+                                            <span>Telegram</span>
+                                        </button>
+                                        <button type="button" class="nox-social-btn" data-toggle="modal" data-target="#inPageModal" onclick="showLobbyNotice('Google Connect', 'Google linking is part of the account layer and is not wired into the local build yet.'); return false;">
+                                            <span class="nox-social-mark nox-social-mark--google" aria-hidden="true">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"></path>
+                                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
+                                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"></path>
+                                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"></path>
+                                                </svg>
+                                            </span>
+                                            <span>Google</span>
+                                        </button>
+                                    </div>
+                                </form>
+
+                                <div class="nox-home-stats">
+                                    <div class="nox-home-stat">
+                                        <span class="nox-home-stat__label">Kills</span>
+                                        <strong class="nox-home-stat__value" id="nox-home-stat-kills">0</strong>
+                                    </div>
+                                    <div class="nox-home-stat">
+                                        <span class="nox-home-stat__label">Time Played</span>
+                                        <strong class="nox-home-stat__value" id="nox-home-stat-time">0m</strong>
+                                    </div>
+                                    <div class="nox-home-stat">
+                                        <span class="nox-home-stat__label">Wins</span>
+                                        <strong class="nox-home-stat__value" id="nox-home-stat-wins">0</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="nox-panel nox-panel--inventory nox-center-panel" id="panel-inventory" data-panel-name="inventory">
+                        <div class="nox-play-header">
+                            <div class="nox-eyebrow">Inventory</div>
+                            <div class="nox-play-status">3 Core Tabs</div>
+                        </div>
+
+                        <div class="nox-subtabs nox-inventory-tabs">
+                            <button type="button" class="nox-subtab is-active" onclick="switchInventoryTab('skins', this); return false;">Skins</button>
+                            <button type="button" class="nox-subtab" onclick="switchInventoryTab('lootboxes', this); return false;">Lootboxes</button>
+                            <button type="button" class="nox-subtab" onclick="switchInventoryTab('cards', this); return false;">Cards</button>
+                        </div>
+
+                        <div class="nox-inventory-content is-active" id="inventory-skins">
+                            <div class="nox-inventory-toolbar">
+                                <div class="nox-section__heading">
+                                    <span>Skin Locker</span>
+                                    <span class="nox-section__tag" id="inventory-skin-status">Equipped: Base</span>
+                                </div>
+                                <p class="nox-microcopy nox-microcopy--inventory">Select a skin card to inspect it, then use it to equip your shell for every match.</p>
+                            </div>
+                            <div class="nox-skins-grid" id="inventory-skins-grid"></div>
+                        </div>
+
+                        <div class="nox-inventory-content" id="inventory-lootboxes">
+                            <div class="nox-locked-stage">
+                                <div class="nox-locked-stage__backdrop" aria-hidden="true">
+                                    <div class="nox-locked-stage__ghost-card"></div>
+                                    <div class="nox-locked-stage__ghost-card"></div>
+                                    <div class="nox-locked-stage__ghost-card"></div>
+                                </div>
+                                <div class="nox-locked-stage__panel">
+                                    <div class="nox-locked-stage__icon">
+                                        <i class="glyphicon glyphicon-lock" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="nox-locked-stage__eyebrow">Lootboxes</div>
+                                    <h3 class="nox-locked-stage__title">Coming Soon</h3>
+                                    <p class="nox-locked-stage__copy">Reward crates are locked while the account reward layer is being finished. Arena gameplay stays untouched.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="nox-inventory-content" id="inventory-cards">
+                            <div class="nox-locked-stage">
+                                <div class="nox-locked-stage__backdrop" aria-hidden="true">
+                                    <div class="nox-locked-stage__ghost-card"></div>
+                                    <div class="nox-locked-stage__ghost-card"></div>
+                                    <div class="nox-locked-stage__ghost-card"></div>
+                                </div>
+                                <div class="nox-locked-stage__panel">
+                                    <div class="nox-locked-stage__icon">
+                                        <i class="glyphicon glyphicon-lock" aria-hidden="true"></i>
+                                    </div>
+                                    <div class="nox-locked-stage__eyebrow">Cards</div>
+                                    <h3 class="nox-locked-stage__title">Coming Soon</h3>
+                                    <p class="nox-locked-stage__copy">Collectible ability cards are held behind the progression lock until the account system is ready for rollout.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="nox-panel nox-panel--inventory nox-center-panel" id="panel-marketplace" data-panel-name="marketplace">
+                        <div class="nox-play-header">
+                            <div class="nox-eyebrow">Marketplace</div>
+                            <div class="nox-play-status">Locked</div>
+                        </div>
+                        <div class="nox-locked-stage">
+                            <div class="nox-locked-stage__backdrop" aria-hidden="true">
+                                <div class="nox-locked-stage__ghost-card"></div>
+                                <div class="nox-locked-stage__ghost-card"></div>
+                                <div class="nox-locked-stage__ghost-card"></div>
+                            </div>
+                            <div class="nox-locked-stage__panel">
+                                <div class="nox-locked-stage__icon">
+                                    <i class="glyphicon glyphicon-lock" aria-hidden="true"></i>
+                                </div>
+                                <div class="nox-locked-stage__eyebrow">Marketplace</div>
+                                <h3 class="nox-locked-stage__title">Coming Soon</h3>
+                                <p class="nox-locked-stage__copy">The trading hub is locked until the account economy and secure exchange layer are ready for release.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="nox-panel nox-panel--inventory nox-center-panel" id="panel-ranking" data-panel-name="ranking">
+                        <div class="nox-play-header">
+                            <div class="nox-eyebrow">Ranking</div>
+                        </div>
+                        <div class="nox-ranking-layout">
+                            <section class="nox-ranking-podium">
+                                <div class="nox-ranking-tabs">
+                                    <button type="button" class="nox-ranking-tab" id="nox-ranking-tab-weekly" onclick="noxSetRankingView('weekly'); return false;">Weekly</button>
+                                    <button type="button" class="nox-ranking-tab is-active" id="nox-ranking-tab-overall" onclick="noxSetRankingView('overall'); return false;">Top-100</button>
+                                    <button type="button" class="nox-ranking-tab is-disabled" aria-disabled="true">
+                                        <span class="glyphicon glyphicon-lock nox-ranking-tab__lock" aria-hidden="true"></span>
+                                        <span>Leagues</span>
+                                    </button>
+                                </div>
+
+                                <div class="nox-ranking-podium__stage" id="nox-ranking-podium-stage"></div>
+                            </section>
+
+                            <section class="nox-ranking-board">
+                                <div class="nox-ranking-board__cap">
+                                    <div class="nox-ranking-board__top">Top <strong>100</strong></div>
+                                </div>
+
+                                <div class="nox-ranking-board__tabs">
+                                    <button type="button" class="nox-ranking-board__tab is-active" id="nox-ranking-board-overall" onclick="noxSetRankingView('overall'); return false;">Top 100</button>
+                                    <button type="button" class="nox-ranking-board__tab" id="nox-ranking-board-weekly" onclick="noxSetRankingView('weekly'); return false;">Weekly</button>
+                                    <button type="button" class="nox-ranking-board__tab" id="nox-ranking-board-daily" onclick="noxSetRankingView('daily'); return false;">Daily</button>
+                                </div>
+
+                                <div class="nox-ranking-self">
+                                    <span class="nox-ranking-self__label">Your rating</span>
+                                    <strong class="nox-ranking-self__value" id="nox-ranking-self-value">-</strong>
+                                </div>
+
+                                <div class="nox-ranking-list" id="nox-ranking-list"></div>
+                            </section>
+                        </div>
+                    </section>
+
+                    <section class="nox-panel nox-panel--inventory nox-center-panel" id="panel-news" data-panel-name="news">
+                        <div class="nox-play-header">
+                            <div class="nox-eyebrow">News</div>
+                            <div class="nox-play-status">Briefing</div>
+                        </div>
+                        <div class="nox-news-grid" id="nox-news-grid"></div>
+                    </section>
+
+                    <section class="nox-panel nox-panel--inventory nox-center-panel" id="panel-support" data-panel-name="support">
+                        <div class="nox-play-header">
+                            <div class="nox-eyebrow">Support</div>
+                            <div class="nox-play-status">Help Desk</div>
+                        </div>
+                        <div class="nox-support-layout">
+                            <div class="nox-tools-card nox-support-card">
+                                <div class="nox-section__heading">
+                                    <span>Issue Report</span>
+                                    <span class="nox-section__tag">Live</span>
+                                </div>
+                                <div class="nox-support-grid">
+                                    <div class="nox-field-group">
+                                        <label for="nox-support-category">Category</label>
+                                        <select id="nox-support-category" class="form-control">
+                                            <option value="bug">Bug</option>
+                                            <option value="performance">Performance</option>
+                                            <option value="ui">UI</option>
+                                            <option value="account">Account</option>
+                                        </select>
+                                    </div>
+                                    <div class="nox-field-group">
+                                        <label for="nox-support-priority">Priority</label>
+                                        <select id="nox-support-priority" class="form-control">
+                                            <option value="normal">Normal</option>
+                                            <option value="high">High</option>
+                                            <option value="urgent">Urgent</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="nox-support-workbench">
+                                    <div class="nox-field-group nox-support-body">
+                                        <label for="nox-support-description">Describe the issue</label>
+                                        <textarea id="nox-support-description" class="form-control nox-support-textarea" placeholder="Tell the NOX admins what happened, what you expected, and how to reproduce it." onpaste="noxHandleSupportPaste(event)"></textarea>
+                                    </div>
+                                    <div class="nox-support-rail">
+                                        <div class="nox-support-capture">
+                                            <label for="nox-support-file" class="nox-support-upload">
+                                                <span class="glyphicon glyphicon-camera" aria-hidden="true"></span>
+                                                <span>Attach Screenshot</span>
+                                            </label>
+                                            <input id="nox-support-file" type="file" accept="image/png,image/jpeg,image/webp" onchange="noxHandleSupportFile(this)">
+                                            <button type="button" class="nox-support-clear" onclick="noxResetSupportPreview(); return false;">Clear</button>
+                                        </div>
+                                        <div class="nox-support-preview" id="nox-support-preview">
+                                            <img id="nox-support-preview-image" alt="">
+                                            <div class="nox-support-preview__empty">Paste an image or attach a screenshot for the report.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="nox-support-status" id="nox-support-status">Reports save locally now and will forward to Telegram once the admin relay is bound.</div>
+                                <button type="button" class="btn btn-play btn-primary nox-primary-action nox-support-submit" onclick="noxSubmitSupportReport(); return false;">Submit Report</button>
+                            </div>
+
+                            <div class="nox-tools-card nox-support-sidecard">
+                                <div class="nox-section__heading">
+                                    <span>Admin Relay</span>
+                                    <span class="nox-section__tag">Ready</span>
+                                </div>
+                                <div class="nox-support-sidecopy">
+                                    <p>Reports are stored on the NOX server with screenshot attachments so nothing gets lost.</p>
+                                    <p>Once the Telegram bot token and chat ID are bound, the same reports will forward directly into the admin chat lane.</p>
+                                </div>
+                                <div class="nox-support-checklist">
+                                    <div class="nox-support-check">Issue details captured</div>
+                                    <div class="nox-support-check">Screenshot attachment supported</div>
+                                    <div class="nox-support-check">Telegram relay path prepared</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="nox-panel nox-panel--inventory nox-center-panel" id="panel-settings" data-panel-name="settings">
+                        <div class="nox-play-header">
+                            <div class="nox-eyebrow">Settings</div>
+                            <div class="nox-play-status">Arena Controls</div>
+                        </div>
+                        <div class="nox-settings-layout">
+                            <div id="settings" class="checkbox nox-tools-card">
+                                <div class="nox-section__heading">
+                                    <span>Visual Preferences</span>
+                                    <span class="nox-section__tag">Live</span>
+                                </div>
+                                <div class="nox-settings-grid">
+                                    <label><input type="checkbox" class="save" data-box-id="1" onchange="setSkins(!$(this).is(':checked'));">Hide Skins</label>
+                                    <label><input type="checkbox" class="save" data-box-id="4" onchange="setColors($(this).is(':checked'));">Hide Colors</label>
+                                    <label><input type="checkbox" class="save" data-box-id="7" onchange="setChatHide($(this).is(':checked'));">Hide Chat</label>
+                                    <label><input type="checkbox" class="save" data-box-id="8" onchange="setMinimap($(this).is(':checked'));">Hide Minimap</label>
+                                    <label><input type="checkbox" class="save" data-box-id="3" onchange="setDarkTheme($(this).is(':checked'));">Dark Map</label>
+                                    <label><input type="checkbox" class="save" data-box-id="18" onchange="setJelly($(this).is(':checked'));">Jelly Physics</label>
+                                    <label><input type="checkbox" class="save" data-box-id="12" onchange="setTransparency($(this).is(':checked'));">Transparent</label>
+                                    <label><input type="checkbox" class="save" data-box-id="14" onchange="setMapBorders($(this).is(':checked'));">Map Borders</label>
+                                </div>
+                                <div class="nox-settings-fields nox-settings-fields--audio">
+                                    <div class="nox-audio-row">
+                                    <div class="nox-audio-control">
+                                        <div class="nox-volume-header">
+                                            <label class="nox-audio-switch" for="nox-sound-toggle">
+                                                <input type="checkbox" id="nox-sound-toggle" onchange="noxSetSoundEnabled(this.checked)">
+                                                    <span>Sound Effects</span>
+                                                </label>
+                                                <span id="nox-sound-volume-value" class="nox-volume-value">50%</span>
+                                            </div>
+                                            <input class="nox-volume-slider" id="soundsVolume" step="0.05" type="range" min="0" max="1" value="0.5">
+                                        </div>
+                                        <div class="nox-audio-control">
+                                            <div class="nox-volume-header">
+                                                <label class="nox-audio-switch" for="nox-music-toggle">
+                                                    <input type="checkbox" id="nox-music-toggle" onchange="noxSetMusicEnabled(this.checked)">
+                                                    <span>Music</span>
+                                                </label>
+                                                <span id="nox-music-volume-value" class="nox-volume-value">34%</span>
+                                            </div>
+                                            <input class="nox-volume-slider" id="nox-music-volume" step="0.05" type="range" min="0" max="1" value="0.34">
+                                        </div>
+                                    </div>
+                                    <div class="nox-settings-togglegrid">
+                                        <div class="nox-settings-toggleline">
+                                            <span class="nox-settings-toggleline__label">Game Logs</span>
+                                            <button type="button" class="nox-audio-tag is-active" id="nox-logs-toggle" onclick="noxToggleGameLogsEnabled(); return false;" aria-pressed="true">On</button>
+                                        </div>
+                                        <div class="nox-settings-toggleline">
+                                            <span class="nox-settings-toggleline__label">Fullscreen</span>
+                                            <button type="button" class="nox-audio-tag" id="nox-fullscreen-toggle" onclick="noxToggleFullscreen(); return false;">Enter</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="instructions" class="nox-tools-card nox-tools-card--tips">
+                                <div class="nox-section__heading">
+                                    <span>Key Bindings</span>
+                                    <div class="nox-inline-actions">
+                                        <a id="nox-admin-launch" class="nox-inline-action" href="#" target="_blank" rel="noopener" style="display:none;">Admin Panel</a>
+                                        <button type="button" class="nox-inline-action" onclick="noxOpenGuideModal(); return false;">Guide</button>
+                                        <button type="button" class="nox-inline-action" onclick="noxResetKeyBindings(); return false;">Reset</button>
+                                    </div>
+                                </div>
+                                <div class="nox-keybinding-note">Click any binding and press a new key. Changes save locally on this device.</div>
+                                <div id="nox-keybinding-list" class="nox-keybinding-list"></div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="connecting">
+        <div style="width: 350px; background-color: #FFFFFF; margin: 100px auto; border-radius: 15px; padding: 5px 15px 5px 15px;">
+            <h2>Connecting...</h2>
+            <p> If you cannot connect to the server, check if you have an antivirus or firewall blocking the connection.</p>
+        </div>
+    </div>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="nox-arena-hud" aria-live="polite">
+        <div class="nox-arena-hud__item">
+            <span class="nox-arena-hud__label">Score</span>
+            <span class="nox-arena-hud__value" id="nox-hud-score">-</span>
+        </div>
+        <div class="nox-arena-hud__item">
+            <span class="nox-arena-hud__label">Mass</span>
+            <span class="nox-arena-hud__value" id="nox-hud-mass">-</span>
+        </div>
+        <div class="nox-arena-hud__item">
+            <span class="nox-arena-hud__label">FPS</span>
+            <span class="nox-arena-hud__value" id="nox-hud-fps">-</span>
+        </div>
+        <div class="nox-arena-hud__item">
+            <span class="nox-arena-hud__label">Ping</span>
+            <span class="nox-arena-hud__value" id="nox-hud-ping">-</span>
+        </div>
+    </div>
+    <aside id="nox-arena-leaderboard" aria-live="polite">
+        <div class="nox-arena-leaderboard__header">
+            <div class="nox-arena-leaderboard__title">Leaderboard</div>
+            <button type="button" class="nox-arena-leaderboard__toggle" id="nox-arena-leaderboard-toggle" onclick="noxToggleArenaLeaderboard(); return false;" aria-label="Collapse leaderboard">
+                <span class="glyphicon glyphicon-chevron-up" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div class="nox-arena-leaderboard__body">
+            <div class="nox-arena-leaderboard__list" id="nox-arena-leaderboard-list">
+                <div class="nox-arena-leaderboard__empty">No ranked pilots visible.</div>
+            </div>
+            <div class="nox-arena-leaderboard__footer">
+                <div class="nox-arena-leaderboard__self" id="nox-arena-leaderboard-self">
+                    <span class="nox-arena-leaderboard__self-rank">#-</span>
+                    <span class="nox-arena-leaderboard__self-name">Unranked</span>
+                </div>
+                <button type="button" class="nox-arena-leaderboard__exit" onclick="noxExitArena(); return false;">Exit Game</button>
+            </div>
+        </div>
+    </aside>
+    <div id="nox-arena-abilities" aria-live="polite">
+        <button type="button" class="nox-arena-ability nox-arena-ability--shield" data-arena-ability data-action="shield" aria-label="Shield">
+            <span class="nox-arena-ability__key">W</span>
+            <span class="nox-arena-ability__count">0</span>
+            <img src="assets/icons/shield.png" alt="" class="nox-arena-ability__icon" />
+            <span class="nox-arena-ability__label">Shield</span>
+            <span class="nox-arena-ability__cooldown"></span>
+        </button>
+        <button type="button" class="nox-arena-ability nox-arena-ability--freeze" data-arena-ability data-action="freeze" aria-label="Freeze">
+            <span class="nox-arena-ability__key">E</span>
+            <span class="nox-arena-ability__count">0</span>
+            <img src="assets/icons/freeze.png" alt="" class="nox-arena-ability__icon" />
+            <span class="nox-arena-ability__label">Freeze</span>
+            <span class="nox-arena-ability__cooldown"></span>
+        </button>
+        <button type="button" class="nox-arena-ability nox-arena-ability--spike" data-arena-ability data-action="spike" aria-label="Spike">
+            <span class="nox-arena-ability__key">Q</span>
+            <span class="nox-arena-ability__count">0</span>
+            <img src="assets/icons/spike.png" alt="" class="nox-arena-ability__icon" />
+            <span class="nox-arena-ability__label">Spike</span>
+            <span class="nox-arena-ability__cooldown"></span>
+        </button>
+    </div>
+    <div id="nox-mobile-controls" aria-hidden="true">
+        <div class="nox-mobile-joystick" id="nox-mobile-joystick" aria-label="Movement joystick">
+            <div class="nox-mobile-joystick__halo"></div>
+            <div class="nox-mobile-joystick__base">
+                <div class="nox-mobile-joystick__ring"></div>
+                <div class="nox-mobile-joystick__knob" id="nox-mobile-joystick-knob"></div>
+            </div>
+            <div class="nox-mobile-joystick__label">Move</div>
+        </div>
+        <div class="nox-mobile-actions">
+            <button type="button" class="nox-mobile-action nox-mobile-action--split" data-action="split" data-auto-release="true" aria-label="Split">
+                <span class="nox-mobile-action__glyph glyphicon glyphicon-resize-full" aria-hidden="true"></span>
+                <span class="nox-mobile-action__label">Split</span>
+            </button>
+            <button type="button" class="nox-mobile-action nox-mobile-action--eject" data-action="eject" data-hold="true" aria-label="Throw mass">
+                <span class="nox-mobile-action__glyph glyphicon glyphicon-share-alt" aria-hidden="true"></span>
+                <span class="nox-mobile-action__label">Mass</span>
+            </button>
+            <div class="nox-mobile-actions__abilities">
+                <button type="button" class="nox-mobile-action nox-mobile-action--ability" data-action="shield" data-auto-release="true" aria-label="Shield">
+                    <span class="nox-mobile-action__count">0</span>
+                    <img src="assets/icons/shield.png" alt="" class="nox-mobile-action__icon" />
+                    <span class="nox-mobile-action__label">Shield</span>
+                    <span class="nox-mobile-action__cooldown">Ready</span>
+                </button>
+                <button type="button" class="nox-mobile-action nox-mobile-action--ability" data-action="freeze" data-auto-release="true" aria-label="Freeze">
+                    <span class="nox-mobile-action__count">0</span>
+                    <img src="assets/icons/freeze.png" alt="" class="nox-mobile-action__icon" />
+                    <span class="nox-mobile-action__label">Freeze</span>
+                    <span class="nox-mobile-action__cooldown">Ready</span>
+                </button>
+                <button type="button" class="nox-mobile-action nox-mobile-action--ability" data-action="spike" data-auto-release="true" aria-label="Spike">
+                    <span class="nox-mobile-action__count">0</span>
+                    <img src="assets/icons/spike.png" alt="" class="nox-mobile-action__icon" />
+                    <span class="nox-mobile-action__label">Spike</span>
+                    <span class="nox-mobile-action__cooldown">Ready</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    <input type="text" id="chat_textbox" placeholder="Press enter to chat" maxlength="200" />
+    <div style="font-family:'Ubuntu'">&nbsp;</div>
+    <script src="assets/js/bootstrap.min.js"></script>
+</body>
+</html>
+
+
