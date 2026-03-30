@@ -15,10 +15,16 @@ class TelegramRelay {
         return !!(this.botToken && this.chatIds.length);
     }
     formatCaption(report) {
+        let loginLabel = "Browser Guest";
+        if (report.authProvider === "telegram") loginLabel = "Telegram Mini App";
+        else if (report.authProvider && report.authProvider !== "guest") loginLabel = report.authProvider;
+        let identityLine = "User: " + report.username;
+        if (report.telegramUsername) identityLine += " (@" + report.telegramUsername.replace(/^@+/, "") + ")";
         return [
             "NOX Support Report",
             "ID: " + report.id,
-            "User: " + report.username,
+            identityLine,
+            "Login: " + loginLabel,
             "Category: " + report.category,
             "Priority: " + report.priority,
             "Page: " + report.page,

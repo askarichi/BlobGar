@@ -1977,7 +1977,9 @@ class GameServer {
                 payload = Object.assign({}, payload || {}, {
                     username: playerSession.displayName,
                     accountKey: playerSession.accountKey,
-                    authProvider: playerSession.provider
+                    authProvider: playerSession.provider,
+                    telegramUserId: playerSession.telegramUserId || null,
+                    telegramUsername: playerSession.telegramUsername || ""
                 });
             }
             let report = this.supportStore.createReport(payload);

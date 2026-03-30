@@ -49,6 +49,9 @@ class PlayerAuth {
     normalizeAccountKey(accountKey) {
         return String(accountKey || "").trim().toLowerCase();
     }
+    normalizeTelegramUsername(username) {
+        return String(username || "").trim().replace(/^@+/, "").replace(/[^\w]/g, "").slice(0, 32);
+    }
     parseCookies(source) {
         let cookieString = "";
         if (source && typeof source === "object" && source.headers) cookieString = String(source.headers.cookie || "");
@@ -74,6 +77,7 @@ class PlayerAuth {
             provider: session.provider || "guest",
             nameLocked: !!session.nameLocked,
             telegramUserId: session.telegramUserId || null,
+            telegramUsername: this.normalizeTelegramUsername(session.telegramUsername || ""),
             csrfToken: session.csrfToken || crypto.randomBytes(24).toString("hex"),
             createdAt: session.createdAt || now,
             expiresAt: session.expiresAt || now + this.sessionTtlMs
@@ -103,6 +107,7 @@ class PlayerAuth {
             payload.displayName = this.sanitizeDisplayName(payload.displayName);
             payload.provider = payload.provider || "guest";
             payload.nameLocked = !!payload.nameLocked;
+            payload.telegramUsername = this.normalizeTelegramUsername(payload.telegramUsername || "");
             payload.csrfToken = payload.csrfToken || "";
             return payload;
         } catch (error) {
@@ -134,7 +139,8 @@ class PlayerAuth {
             provider: session.provider,
             nameLocked: !!session.nameLocked,
             csrfToken: session.csrfToken,
-            telegramUserId: session.telegramUserId || null
+            telegramUserId: session.telegramUserId || null,
+            telegramUsername: session.telegramUsername || ""
         };
     }
     getSession(req) {
@@ -197,6 +203,7 @@ class PlayerAuth {
             provider: "guest",
             nameLocked: false,
             telegramUserId: null,
+            telegramUsername: "",
             csrfToken: currentSession.csrfToken,
             createdAt: currentSession.createdAt,
             expiresAt: Date.now() + this.sessionTtlMs
@@ -313,7 +320,8 @@ class PlayerAuth {
                 displayName: this.fallbackTelegramDisplayName(user),
                 provider: "telegram",
                 nameLocked: true,
-                telegramUserId: String(user.id)
+                telegramUserId: String(user.id),
+                telegramUsername: this.normalizeTelegramUsername(user && user.username || "")
             });
         this.writeSessionCookie(res, session, req);
         return {
@@ -347,7 +355,8 @@ class PlayerAuth {
             name: overrideName || (session && session.displayName) || "Pilot-07",
             authProvider: session && session.provider ? session.provider : "guest",
             nameLocked: !!(session && session.nameLocked),
-            telegramUserId: session && session.telegramUserId ? String(session.telegramUserId) : null
+            telegramUserId: session && session.telegramUserId ? String(session.telegramUserId) : null,
+            telegramUsername: session && session.telegramUsername ? String(session.telegramUsername) : ""
         };
     }
 }
