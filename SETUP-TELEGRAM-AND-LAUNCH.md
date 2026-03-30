@@ -46,6 +46,8 @@ NOX_SERVER_CHAT_PASSWORD=MAKE_A_LONG_RANDOM_PASSWORD_HERE
 - `NOX_TELEGRAM_CHAT_ID`
   - optional now
   - used for support relay into Telegram admin chat
+  - this must be the target admin group/chat id, not just your private chat with the bot
+  - you can provide multiple chat ids separated by commas if you want support reports to go to more than one place
 - `NOX_CLIENT_BIND`
   - the exact allowed browser client origin
   - examples:
