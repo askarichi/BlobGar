@@ -285,6 +285,18 @@
         function noxGetTelegramAuthEndpoint() {
             return noxGetApiBase() + "/nox/auth/telegram";
         }
+        function noxBuildTelegramLaunchUrl() {
+            var rawUrl = String(noxClientConfig.telegramLaunchUrl || "").trim();
+            if (!rawUrl) return "";
+            try {
+                var parsed = new URL(rawUrl, window.location.origin);
+                if (!parsed.searchParams.get("mode")) parsed.searchParams.set("mode", "fullscreen");
+                return parsed.toString();
+            } catch (error) {
+                if (/[?&]mode=/.test(rawUrl)) return rawUrl;
+                return rawUrl + (rawUrl.indexOf("?") === -1 ? "?" : "&") + "mode=fullscreen";
+            }
+        }
         function noxGetProfileEndpoint() {
             return noxGetApiBase() + "/nox/profile-progress";
         }
@@ -369,8 +381,9 @@
                 showLobbyNotice("Telegram Connected", "You are already connected through Telegram.");
                 return false;
             }
-            if (noxClientConfig.telegramLaunchUrl) {
-                window.open(noxClientConfig.telegramLaunchUrl, "_blank", "noopener");
+            var launchUrl = noxBuildTelegramLaunchUrl();
+            if (launchUrl) {
+                window.open(launchUrl, "_blank", "noopener");
                 return false;
             }
             if (noxClientConfig.telegramLoginConfigured) {
@@ -383,6 +396,29 @@
         function noxTelegramMiniApp() {
             return !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
         }
+        function noxRequestTelegramFullscreen() {
+            if (!noxTelegramMiniApp()) return;
+            var webApp = window.Telegram.WebApp;
+            try {
+                webApp.ready();
+            } catch (error) {
+            }
+            try {
+                if (typeof webApp.expand === "function") webApp.expand();
+            } catch (error) {
+            }
+            try {
+                if (typeof webApp.requestFullscreen === "function") {
+                    var request = webApp.requestFullscreen();
+                    if (request && request.catch) request.catch(function() {});
+                }
+            } catch (error) {
+            }
+            try {
+                if (typeof webApp.lockOrientation === "function") webApp.lockOrientation();
+            } catch (error) {
+            }
+        }
         function noxBootstrapPlayerAuth() {
             var nickInput = document.getElementById("nick");
             var preferredName = noxExtractPlayerIdentity(nickInput ? nickInput.value : "").name || "Pilot-07";
@@ -390,11 +426,9 @@
             noxAuthState.isTelegramMiniApp = noxTelegramMiniApp();
             noxSetPlayReady(false);
             if (noxAuthState.isTelegramMiniApp) {
-                try {
-                    window.Telegram.WebApp.ready();
-                    if (window.Telegram.WebApp.expand) window.Telegram.WebApp.expand();
-                } catch (error) {
-                }
+                noxRequestTelegramFullscreen();
+                window.setTimeout(noxRequestTelegramFullscreen, 180);
+                window.setTimeout(noxRequestTelegramFullscreen, 900);
                 if (nickInput) {
                     nickInput.readOnly = true;
                     nickInput.classList.add("is-readonly");
