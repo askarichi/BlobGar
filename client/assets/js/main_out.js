@@ -1013,6 +1013,7 @@
         document.body.classList.remove("lobby-mode");
         document.body.classList.add("arena-mode");
         updateMobileClientMode();
+        if (wHandle.NoxArenaNextBackground) wHandle.NoxArenaNextBackground.setArenaActive(true);
         if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         if (typeof wHandle.noxTryLockLandscape === "function") wHandle.noxTryLockLandscape();
         if (typeof wHandle.noxSyncPlaybackMode === "function") wHandle.noxSyncPlaybackMode();
@@ -1025,6 +1026,7 @@
         document.body.classList.add("lobby-mode");
         resetMobileJoystick();
         updateMobileClientMode();
+        if (wHandle.NoxArenaNextBackground) wHandle.NoxArenaNextBackground.setArenaActive(false);
         if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         if (typeof wHandle.noxSyncPlaybackMode === "function") wHandle.noxSyncPlaybackMode();
         if (typeof wHandle.onresize === "function") wHandle.onresize();
@@ -2187,6 +2189,44 @@
         mainCtx.stroke();
         mainCtx.restore();
     }
+    function renderArenaNextBackground() {
+        if (!wHandle.NoxArenaNextBackground || !mainCanvas) return false;
+        let cW = mainCanvas.width / camera.z,
+            cH = mainCanvas.height / camera.z,
+            step = 50;
+        return !!wHandle.NoxArenaNextBackground.render({
+            arenaActive: !overlayShown,
+            width: mainCanvas.width,
+            height: mainCanvas.height,
+            cameraX: camera.x,
+            cameraY: camera.y,
+            cameraZ: camera.z,
+            viewWidth: cW,
+            viewHeight: cH,
+            startLeft: (-camera.x + cW / 2) % step,
+            startTop: (-camera.y + cH / 2) % step,
+            darkTheme: settings.darkTheme,
+            hideGrid: settings.hideGrid,
+            mapBorders: settings.mapBorders,
+            connected: isConnected,
+            now: syncAppStamp,
+            border: {
+                centerX: border.centerX || 0,
+                centerY: border.centerY || 0,
+                left: border.left || 0,
+                right: border.right || 0,
+                top: border.top || 0,
+                bottom: border.bottom || 0,
+                width: border.width || 0,
+                height: border.height || 0,
+                radius: border.radius || 0
+            },
+            initOptions: {
+                hostId: "nox-arena-stage",
+                beforeId: "canvas"
+            }
+        });
+    }
     function drawSectors() { // Rendered unusable when a server has coordinate scrambling enabled
         if (!isConnected || border.centerX !== 0 || border.centerY !== 0 || !settings.sectors) return;
         let x = border.left + 65,
@@ -2305,12 +2345,16 @@
                 }
             }
         } else quadtree = null;
+        let arenaNextBackgroundActive = renderArenaNextBackground();
         mainCtx.save();
-        mainCtx.fillStyle = settings.darkTheme ? "#000" : "#F2FBFF";
-        mainCtx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
-        if (!settings.hideGrid) drawGrid();
+        if (arenaNextBackgroundActive) mainCtx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+        else {
+            mainCtx.fillStyle = settings.darkTheme ? "#000" : "#F2FBFF";
+            mainCtx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
+            if (!settings.hideGrid) drawGrid();
+        }
         toCamera(mainCtx);
-        drawBorders();
+        if (!arenaNextBackgroundActive) drawBorders();
         drawSectors();
         for (let i = 0; i < visibleCells.length; i++) visibleCells[i].draw(mainCtx);
         fromCamera(mainCtx);
@@ -3732,6 +3776,10 @@
         syncArenaLeaderboardUI();
         renderArenaLeaderboard();
         applyArenaThemeClass();
+        if (wHandle.NoxArenaNextBackground) wHandle.NoxArenaNextBackground.init({
+            hostId: "nox-arena-stage",
+            beforeId: "canvas"
+        });
         if (wHandle.localStorage) soundEnabled = wHandle.localStorage.getItem("nox-sound-enabled") !== "false";
         syncSoundToggleUI();
         if (soundsVolume) {
@@ -3829,6 +3877,9 @@
             camera.viewMult = Math.sqrt(Math.min(cH / 1080, cW / 1920));
             updateMobileClientMode();
             updateMobileJoystickVisual();
+            if (wHandle.NoxArenaNextBackground) wHandle.NoxArenaNextBackground.resize(cW, cH, {
+                darkTheme: settings.darkTheme
+            });
             if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         };
         wHandle.onresize();

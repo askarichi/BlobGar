@@ -188,6 +188,20 @@ select {
     touch-action: none;
 }
 
+#nox-arena-next-root {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+#nox-arena-next-root canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
 #nox-mobile-landscape-lock {
     position: fixed;
     inset: 0;
