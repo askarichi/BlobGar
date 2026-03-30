@@ -1985,8 +1985,8 @@
             viewTop = camera.y - cH / 2,
             startLeft = (-camera.x + cW / 2) % step,
             startTop = (-camera.y + cH / 2) % step,
-            baseColor = settings.darkTheme ? "#1F1F1F" : "#000",
-            centerColor = settings.darkTheme ? "#7A5730" : "#4B3A20",
+            baseColor = settings.darkTheme ? "#313746" : "#000",
+            centerColor = settings.darkTheme ? "#A57942" : "#4B3A20",
             centerX = border.centerX || 0,
             centerY = border.centerY || 0,
             centerDrawX = centerX - viewLeft,
@@ -1999,7 +1999,7 @@
 
         mainCtx.lineWidth = 1;
         mainCtx.strokeStyle = baseColor;
-        mainCtx.globalAlpha = settings.darkTheme ? .26 : .12;
+        mainCtx.globalAlpha = settings.darkTheme ? .42 : .12;
         mainCtx.beginPath();
         for (i = startLeft; i < cW; i += step) {
             let worldX = viewLeft + i;
@@ -2018,7 +2018,7 @@
 
         mainCtx.lineWidth = 1.45;
         mainCtx.strokeStyle = centerColor;
-        mainCtx.globalAlpha = settings.darkTheme ? .52 : .24;
+        mainCtx.globalAlpha = settings.darkTheme ? .72 : .24;
         mainCtx.beginPath();
         mainCtx.moveTo(centerDrawX, 0);
         mainCtx.lineTo(centerDrawX, cH);
@@ -2028,7 +2028,7 @@
 
         if (centerDrawX > -glowRadius && centerDrawX < cW + glowRadius && centerDrawY > -glowRadius && centerDrawY < cH + glowRadius) {
             let glow = mainCtx.createRadialGradient(centerDrawX, centerDrawY, 0, centerDrawX, centerDrawY, glowRadius);
-            glow.addColorStop(0, settings.darkTheme ? "rgba(255, 188, 92, 0.16)" : "rgba(90, 70, 40, 0.08)");
+            glow.addColorStop(0, settings.darkTheme ? "rgba(255, 188, 92, 0.24)" : "rgba(90, 70, 40, 0.08)");
             glow.addColorStop(1, "rgba(0, 0, 0, 0)");
             mainCtx.globalAlpha = 1;
             mainCtx.fillStyle = glow;
@@ -2036,7 +2036,7 @@
             mainCtx.arc(centerDrawX, centerDrawY, glowRadius, 0, PI_2);
             mainCtx.fill();
 
-            mainCtx.strokeStyle = settings.darkTheme ? "rgba(255, 216, 168, 0.44)" : "rgba(92, 72, 36, 0.24)";
+            mainCtx.strokeStyle = settings.darkTheme ? "rgba(255, 223, 182, 0.64)" : "rgba(92, 72, 36, 0.24)";
             mainCtx.lineWidth = 1.2;
             mainCtx.beginPath();
             mainCtx.moveTo(centerDrawX - markerCross, centerDrawY);
@@ -2045,7 +2045,7 @@
             mainCtx.lineTo(centerDrawX, centerDrawY + markerCross);
             mainCtx.stroke();
 
-            mainCtx.fillStyle = settings.darkTheme ? "rgba(255, 210, 150, 0.78)" : "rgba(92, 72, 36, 0.42)";
+            mainCtx.fillStyle = settings.darkTheme ? "rgba(255, 218, 164, 0.90)" : "rgba(92, 72, 36, 0.42)";
             mainCtx.beginPath();
             mainCtx.arc(centerDrawX, centerDrawY, markerRadius * .2, 0, PI_2);
             mainCtx.fill();
