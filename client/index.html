@@ -752,10 +752,22 @@
                 return ("ontouchstart" in window) || (navigator && navigator.maxTouchPoints > 0);
             }
         }
+        function noxGetLandscapeRotationDeg() {
+            var angle = 0;
+            try {
+                if (screen.orientation && typeof screen.orientation.angle === "number") angle = screen.orientation.angle;
+                else if (typeof window.orientation === "number") angle = window.orientation;
+            } catch (error) {
+                angle = typeof window.orientation === "number" ? window.orientation : 0;
+            }
+            if (angle === -90 || angle === 270 || angle === 180) return "-90deg";
+            return "90deg";
+        }
         function noxSyncLandscapePrompt() {
             var mobileLike = noxIsMobileLike();
             var portrait = window.innerHeight > window.innerWidth;
             document.body.classList.toggle("nox-mobile-force-landscape", !!(mobileLike && portrait));
+            document.documentElement.style.setProperty("--nox-force-landscape-rotation", noxGetLandscapeRotationDeg());
             noxSyncTelegramGestureState();
         }
         function noxInstallArenaGestureGuards() {

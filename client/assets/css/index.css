@@ -17,6 +17,7 @@
     --nox-radius-lg: 14px;
     --nox-radius-md: 10px;
     --nox-radius-sm: 8px;
+    --nox-force-landscape-rotation: 90deg;
 }
 
 * {
@@ -240,7 +241,7 @@ select {
         bottom: auto;
         width: 100vh;
         height: 100vw;
-        transform: translate(-50%, -50%) rotate(90deg);
+        transform: translate(-50%, -50%) rotate(var(--nox-force-landscape-rotation, 90deg));
         transform-origin: center center;
     }
 
@@ -255,7 +256,7 @@ select {
         bottom: auto;
         width: 100vh;
         height: 100vw;
-        transform: translate(-50%, -50%) rotate(90deg);
+        transform: translate(-50%, -50%) rotate(var(--nox-force-landscape-rotation, 90deg));
         transform-origin: center center;
         overflow: hidden;
     }

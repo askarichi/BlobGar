@@ -2042,7 +2042,6 @@
     function drawGrid() {
         mainCtx.save();
         let step = 50,
-            i,
             cW = mainCanvas.width / camera.z,
             cH = mainCanvas.height / camera.z,
             viewLeft = camera.x - cW / 2,
@@ -2060,25 +2059,34 @@
             glowRadius = 60 / camera.z,
             centerTolerance = step * .25 / Math.max(camera.z, .001);
         scaleForth(mainCtx);
-
-        mainCtx.lineWidth = 1;
-        mainCtx.strokeStyle = baseColor;
-        mainCtx.globalAlpha = settings.darkTheme ? .42 : .12;
-        mainCtx.beginPath();
-        for (i = startLeft; i < cW; i += step) {
-            let worldX = viewLeft + i;
-            if (Math.abs(worldX - centerX) <= centerTolerance) continue;
-            mainCtx.moveTo(i, 0);
-            mainCtx.lineTo(i, cH);
+        let tile = getGridTileCanvas(settings.darkTheme),
+            pattern = tile ? mainCtx.createPattern(tile, "repeat") : null;
+        if (pattern) {
+            mainCtx.save();
+            mainCtx.translate(startLeft - step, startTop - step);
+            mainCtx.fillStyle = pattern;
+            mainCtx.fillRect(0, 0, cW + step * 2, cH + step * 2);
+            mainCtx.restore();
+        } else {
+            mainCtx.lineWidth = 1;
+            mainCtx.strokeStyle = baseColor;
+            mainCtx.globalAlpha = settings.darkTheme ? .42 : .12;
+            mainCtx.beginPath();
+            for (let i = startLeft; i < cW; i += step) {
+                let worldX = viewLeft + i;
+                if (Math.abs(worldX - centerX) <= centerTolerance) continue;
+                mainCtx.moveTo(i, 0);
+                mainCtx.lineTo(i, cH);
+            }
+            for (let i = startTop; i < cH; i += step) {
+                let worldY = viewTop + i;
+                if (Math.abs(worldY - centerY) <= centerTolerance) continue;
+                mainCtx.moveTo(0, i);
+                mainCtx.lineTo(cW, i);
+            }
+            mainCtx.closePath();
+            mainCtx.stroke();
         }
-        for (i = startTop; i < cH; i += step) {
-            let worldY = viewTop + i;
-            if (Math.abs(worldY - centerY) <= centerTolerance) continue;
-            mainCtx.moveTo(0, i);
-            mainCtx.lineTo(cW, i);
-        }
-        mainCtx.closePath();
-        mainCtx.stroke();
 
         mainCtx.lineWidth = 1.45;
         mainCtx.strokeStyle = centerColor;
@@ -2115,6 +2123,28 @@
             mainCtx.fill();
         }
         mainCtx.restore();
+    }
+    let cachedGridTiles = {};
+    function getGridTileCanvas(isDarkTheme) {
+        let key = isDarkTheme ? "dark" : "light";
+        if (cachedGridTiles[key]) return cachedGridTiles[key];
+        let step = 50,
+            canvas = document.createElement("canvas"),
+            ctx = null;
+        canvas.width = step;
+        canvas.height = step;
+        ctx = canvas.getContext("2d");
+        if (!ctx) return null;
+        ctx.strokeStyle = isDarkTheme ? "rgba(49, 55, 70, 0.42)" : "rgba(0, 0, 0, 0.12)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(step - .5, 0);
+        ctx.lineTo(step - .5, step);
+        ctx.moveTo(0, step - .5);
+        ctx.lineTo(step, step - .5);
+        ctx.stroke();
+        cachedGridTiles[key] = canvas;
+        return canvas;
     }
     function drawBorders() { // Rendered unusable when a server has coordinate scrambling enabled
         if (!isConnected || !settings.mapBorders || !border.width || !border.height) return;
@@ -2689,10 +2719,82 @@
         ctx.fill();
         return sprite.canvas;
     }
+    function traceSpriteJaggedPath(ctx, radius) {
+        let points = Math.max(18, Math.floor(radius)),
+            increment = PI_2 / points;
+        ctx.beginPath();
+        ctx.moveTo(0, radius + 3);
+        for (let i = 1; i < points; i++) {
+            let angle = i * increment,
+                dist = radius - 3 + (i % 2 === 0) * 6;
+            ctx.lineTo(Math.sin(angle) * dist, Math.cos(angle) * dist);
+        }
+        ctx.lineTo(0, radius + 3);
+        ctx.closePath();
+    }
+    function buildSpikeHazardSprite(size, perfLevel) {
+        let sprite = createEffectSpriteCanvas(getEffectSpriteLogicalSize("spikeHazard", size), perfLevel),
+            ctx = sprite.ctx,
+            ringColor = "#74ff64",
+            rimColor = blendColors(ringColor, "#fff1c9", .28),
+            shellColor = blendColors(ringColor, "#0e1218", .72),
+            coreColor = blendColors(ringColor, "#040507", .92),
+            coreHighlight = blendColors(ringColor, "#293548", .55),
+            pulse = .92,
+            outerGlow = size * 1.18,
+            innerRadius = size * .62,
+            innerRing = size * .74;
+        let aura = ctx.createRadialGradient(0, 0, size * .25, 0, 0, outerGlow);
+        aura.addColorStop(0, rgbaFromHex(ringColor, .05 * pulse));
+        aura.addColorStop(.55, rgbaFromHex(ringColor, .09 * pulse));
+        aura.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(0, 0, outerGlow, 0, PI_2);
+        ctx.fill();
+        traceSpriteJaggedPath(ctx, size);
+        let shell = ctx.createRadialGradient(-size * .18, -size * .24, size * .1, 0, 0, size * 1.08);
+        shell.addColorStop(0, blendColors(shellColor, "#253041", .42));
+        shell.addColorStop(.38, shellColor);
+        shell.addColorStop(.82, blendColors(shellColor, "#05070a", .46));
+        shell.addColorStop(1, blendColors(ringColor, "#07090d", .84));
+        ctx.shadowBlur = perfLevel === 2 ? 12 + size * .12 : perfLevel === 1 ? 6 + size * .06 : 0;
+        ctx.shadowColor = rgbaFromHex(ringColor, .26 + pulse * .08);
+        ctx.fillStyle = shell;
+        ctx.fill();
+        ctx.shadowBlur = perfLevel === 2 ? 10 + size * .08 : perfLevel === 1 ? 5 + size * .04 : 0;
+        ctx.shadowColor = rgbaFromHex(ringColor, .3);
+        ctx.strokeStyle = rgbaFromHex(rimColor, .92);
+        ctx.lineWidth = Math.max(3, size * .1);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        let core = ctx.createRadialGradient(-size * .12, -size * .18, size * .06, 0, 0, innerRadius);
+        core.addColorStop(0, coreHighlight);
+        core.addColorStop(.22, blendColors(coreHighlight, "#121824", .45));
+        core.addColorStop(.6, coreColor);
+        core.addColorStop(1, "#050608");
+        ctx.fillStyle = core;
+        ctx.beginPath();
+        ctx.arc(0, 0, innerRadius, 0, PI_2);
+        ctx.fill();
+        ctx.strokeStyle = rgbaFromHex(rimColor, .48);
+        ctx.lineWidth = Math.max(2, size * .038);
+        ctx.beginPath();
+        ctx.arc(0, 0, innerRing, 0, PI_2);
+        ctx.stroke();
+        ctx.fillStyle = rgbaFromHex("#ffe9b8", .52 * pulse);
+        ctx.beginPath();
+        ctx.arc(-size * .2, -size * .24, Math.max(2, size * .075), 0, PI_2);
+        ctx.fill();
+        return sprite.canvas;
+    }
     function newEffectSpriteCache(effect, size, perfLevel) {
         let bucket = getEffectSpriteBucket(size),
             builder = null;
         switch (effect) {
+            case "spikeHazard":
+                builder = buildSpikeHazardSprite;
+                break;
             case "shieldAura":
                 builder = buildShieldAuraSprite;
                 break;
@@ -2941,52 +3043,13 @@
         drawSpikeHazard(ctx, alpha) {
             let ringColor = settings.showColor ? this.color : "#74ff64",
                 rimColor = blendColors(ringColor, "#fff1c9", .28),
-                shellColor = blendColors(ringColor, "#0e1218", .72),
-                coreColor = blendColors(ringColor, "#040507", .92),
-                coreHighlight = blendColors(ringColor, "#293548", .55),
                 pulse = .78 + .22 * Math.sin(syncAppStamp / 420 + this.id * .19),
                 shimmer = (syncAppStamp / 1100 + this.id * .13) % PI_2,
-                outerGlow = this.s * (1.15 + pulse * .04),
-                innerRadius = this.s * .62,
-                innerRing = this.s * .74;
-
+                innerRing = this.s * .74,
+                perfLevel = getRenderPerformanceLevel(),
+                baseSprite = getEffectSpriteCache("spikeHazard", this.s, perfLevel);
             ctx.globalAlpha = alpha;
-            let aura = ctx.createRadialGradient(this.x, this.y, this.s * .25, this.x, this.y, outerGlow);
-            aura.addColorStop(0, rgbaFromHex(ringColor, .04 * pulse));
-            aura.addColorStop(.55, rgbaFromHex(ringColor, .08 * pulse));
-            aura.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.fillStyle = aura;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, outerGlow, 0, PI_2);
-            ctx.fill();
-
-            this.traceShapePath(ctx);
-            let shell = ctx.createRadialGradient(this.x - this.s * .18, this.y - this.s * .24, this.s * .1, this.x, this.y, this.s * 1.08);
-            shell.addColorStop(0, blendColors(shellColor, "#253041", .42));
-            shell.addColorStop(.38, shellColor);
-            shell.addColorStop(.82, blendColors(shellColor, "#05070a", .46));
-            shell.addColorStop(1, blendColors(ringColor, "#07090d", .84));
-            ctx.shadowBlur = 12 + this.s * .12 * pulse;
-            ctx.shadowColor = rgbaFromHex(ringColor, .26 + pulse * .08);
-            ctx.fillStyle = shell;
-            ctx.fill();
-
-            ctx.shadowBlur = 10 + this.s * .08 * pulse;
-            ctx.shadowColor = rgbaFromHex(ringColor, .3);
-            ctx.strokeStyle = rgbaFromHex(rimColor, .92);
-            ctx.lineWidth = Math.max(3, this.s * .1);
-            ctx.stroke();
-
-            ctx.shadowBlur = 0;
-            let core = ctx.createRadialGradient(this.x - this.s * .12, this.y - this.s * .18, this.s * .06, this.x, this.y, innerRadius);
-            core.addColorStop(0, coreHighlight);
-            core.addColorStop(.22, blendColors(coreHighlight, "#121824", .45));
-            core.addColorStop(.6, coreColor);
-            core.addColorStop(1, "#050608");
-            ctx.fillStyle = core;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, innerRadius, 0, PI_2);
-            ctx.fill();
+            drawEffectCacheSprite(ctx, baseSprite, this.x, this.y, this.s, .98 + pulse * .04);
 
             ctx.strokeStyle = rgbaFromHex(rimColor, .42 + pulse * .12);
             ctx.lineWidth = Math.max(2, this.s * .038);
