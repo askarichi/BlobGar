@@ -1359,8 +1359,9 @@
                     var fileInput = document.getElementById("nox-support-file");
                     if (fileInput) fileInput.value = "";
                     noxResetSupportPreview();
-                    noxSetSupportStatus("success", response.message || "Report sent.");
-                    showLobbyNotice("Support Report Sent", "Issue " + response.id + " was saved. " + (response.message || ""));
+                    var successMessage = response.relayStatus === "delivered" ? (response.message || "Report delivered to NOX admins.") : (response.message || "Report saved for NOX admin review.");
+                    noxSetSupportStatus("success", successMessage);
+                    showLobbyNotice("Support Report Saved", "Issue " + response.id + " was saved for review. " + successMessage);
                     return;
                 }
                 noxSetSupportStatus("error", response.error || "Support report could not be sent.");

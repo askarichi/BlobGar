@@ -105,6 +105,22 @@ class SupportStore {
         report.relayMessage = message || "";
         this.writeJson(this.reportsFile, this.reports);
     }
+    listReports(limit) {
+        let safeLimit = Math.max(1, Math.min(250, Math.round(limit || 50)));
+        return this.reports.reports.slice(0, safeLimit).map(report => ({
+            id: report.id,
+            createdAt: report.createdAt,
+            username: report.username,
+            category: report.category,
+            priority: report.priority,
+            description: report.description,
+            relayStatus: report.relayStatus,
+            relayMessage: report.relayMessage,
+            hasScreenshot: !!report.screenshotPath,
+            authProvider: report.authProvider || "guest",
+            page: report.page || "support"
+        }));
+    }
 }
 
 module.exports = SupportStore;

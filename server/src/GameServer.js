@@ -1693,6 +1693,9 @@ class GameServer {
         });
         if (req.method === "GET" && requestURL.pathname.indexOf("/admin/api/players/") === 0) return this.sendJson(res, 200, this.buildAdminPlayerDetail(requestURL.pathname.split("/").pop()));
         if (req.method === "GET" && requestURL.pathname === "/admin/api/analytics") return this.sendJson(res, 200, this.adminStore.buildAnalytics(30));
+        if (req.method === "GET" && requestURL.pathname === "/admin/api/support/reports") return this.sendJson(res, 200, {
+            reports: this.supportStore.listReports(Number(requestURL.searchParams.get("limit") || 80))
+        });
         if (req.method === "GET" && requestURL.pathname === "/admin/api/settings") return this.sendJson(res, 200, {
             featureFlags: this.adminStore.getFeatureFlags(),
             runtimeSettings: this.getAdminLiveOpsSettingsSnapshot()
@@ -1980,6 +1983,19 @@ class GameServer {
             let report = this.supportStore.createReport(payload);
             return Promise.resolve(this.telegramRelay.relay(report)).then(relayResult => {
                 this.supportStore.markRelay(report.id, relayResult.status, relayResult.message);
+                this.adminStore.appendAudit({
+                    actor: report.username || "support-player",
+                    action: "support.report.created",
+                    targetType: "support",
+                    target: report.id,
+                    after: {
+                        relayStatus: relayResult.status,
+                        category: report.category,
+                        priority: report.priority,
+                        authProvider: payload && payload.authProvider || "guest"
+                    },
+                    ip: this.adminAuth.getIp(req)
+                });
                 this.sendJson(res, 200, {
                     ok: true,
                     id: report.id,
@@ -1988,6 +2004,19 @@ class GameServer {
                 });
             }).catch(error => {
                 this.supportStore.markRelay(report.id, "queued", "Telegram relay failed: " + error.message);
+                this.adminStore.appendAudit({
+                    actor: report.username || "support-player",
+                    action: "support.report.created",
+                    targetType: "support",
+                    target: report.id,
+                    after: {
+                        relayStatus: "queued",
+                        category: report.category,
+                        priority: report.priority,
+                        authProvider: payload && payload.authProvider || "guest"
+                    },
+                    ip: this.adminAuth.getIp(req)
+                });
                 this.sendJson(res, 200, {
                     ok: true,
                     id: report.id,
