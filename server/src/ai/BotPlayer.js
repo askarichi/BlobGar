@@ -17,6 +17,9 @@ class BotPlayer extends PlayerTracker {
         this.ejectDecisionCooldown = this.randomInt(14, 34);
         this.wanderCooldown = 0;
         this.wanderTarget = null;
+        this.sessionTicksLeft = this.randomInt(25 * 90, 25 * 240);
+        this.massReliefCooldown = this.randomInt(12, 28);
+        this.logoutCooldown = this.randomInt(25 * 12, 25 * 40);
         this.personality = {
             aggression: this.randomRange(0.62, 0.96),
             caution: this.randomRange(0.26, 0.64),
@@ -48,6 +51,14 @@ class BotPlayer extends PlayerTracker {
     }
     getLargestForOwner(owner) {
         return owner && owner.cells && owner.cells.length ? this.getLargest(owner.cells) : null;
+    }
+    getTotalMass() {
+        let total = 0;
+        for (let i = 0; i < this.cells.length; i++) {
+            let cell = this.cells[i];
+            if (cell && !cell.isRemoved) total += cell._mass || 0;
+        }
+        return total;
     }
     isNodeUsable(node) {
         return !!(node && !node.isRemoved && node.position);
@@ -249,9 +260,29 @@ class BotPlayer extends PlayerTracker {
         if (scan.threat && scan.threat.dist < cell._size * 3.1) return;
         let buddyCell = this.getLargestForOwner(scan.buddy.owner);
         if (!buddyCell || buddyCell._size < cell._size * 0.92 || cell._size < this.gameServer.massToSize(24)) return;
-        if (this.chance(0.14 + this.personality.teamwork * 0.24)) {
-            if (this.queueAction("ejectBuddy", buddyCell, this.randomInt(1, 3), 1)) this.ejectDecisionCooldown = this.randomInt(14, 34);
+        let supportBias = this.getTotalMass() > 650 ? 0.18 : 0;
+        if (this.chance(0.14 + supportBias + this.personality.teamwork * 0.24)) {
+            if (this.queueAction("ejectBuddy", buddyCell, this.randomInt(1, 3), 1)) this.ejectDecisionCooldown = this.randomInt(10, 26);
         }
+    }
+    planMassReliefAction(cell, scan) {
+        if (this.massReliefCooldown > 0 || this.ejectDecisionCooldown > 0) return false;
+        let totalMass = this.getTotalMass(),
+            heavyMass = totalMass > 620,
+            overloadedMass = totalMass > 1300;
+        if (!heavyMass) return false;
+        if (scan.threat && scan.threat.dist < cell._size * 3.8) return false;
+        let buddy = scan.buddy ? this.getLargestForOwner(scan.buddy.owner) : this.getLargestForOwner(this.buddyTarget);
+        if (!buddy || buddy._size > cell._size * 1.35) return false;
+        let shareChance = overloadedMass ? 0.72 : 0.4 + this.personality.teamwork * 0.18;
+        if (this.chance(shareChance)) {
+            if (this.queueAction("ejectBuddy", buddy, this.randomInt(1, 2), 3)) {
+                this.massReliefCooldown = overloadedMass ? this.randomInt(3, 8) : this.randomInt(7, 16);
+                this.ejectDecisionCooldown = overloadedMass ? this.randomInt(4, 10) : this.randomInt(8, 18);
+                return true;
+            }
+        }
+        return false;
     }
     canSplitAttack(cell, prey, dist) {
         if (!prey || !this.isNodeUsable(prey) || this.splitCooldown > 0 || this.gameServer.isShieldActive(this) || this.gameServer.isFrozen(this)) return false;
@@ -263,8 +294,13 @@ class BotPlayer extends PlayerTracker {
     }
     planOffensiveAction(cell, scan) {
         if (!scan.prey) return;
+        let totalMass = this.getTotalMass();
+        if (totalMass > 750 && scan.buddy && !scan.threat && this.chance(0.38 + this.personality.teamwork * 0.18)) return;
         if (scan.threat && scan.threat.score > scan.prey.score * (0.9 + this.personality.caution * 0.54)) return;
-        if (this.canSplitAttack(cell, scan.prey.node, scan.prey.dist) && this.chance(0.32 + this.personality.aggression * 0.28)) {
+        let splitChance = 0.32 + this.personality.aggression * 0.28;
+        if (totalMass > 950) splitChance *= 0.58;
+        else if (totalMass > 650) splitChance *= 0.76;
+        if (this.canSplitAttack(cell, scan.prey.node, scan.prey.dist) && this.chance(splitChance)) {
             if (this.queueAction("split", scan.prey.node, this.randomInt(4, 10), 2)) return;
         }
         if (this.abilityDecisionCooldown <= 0 && this.profileResources && this.profileResources.spikes > 0) {
@@ -332,6 +368,9 @@ class BotPlayer extends PlayerTracker {
         this.tickDown("abilityDecisionCooldown");
         this.tickDown("ejectDecisionCooldown");
         this.tickDown("wanderCooldown");
+        this.tickDown("sessionTicksLeft");
+        this.tickDown("massReliefCooldown");
+        this.tickDown("logoutCooldown");
         let cell = this.getLargest(this.cells);
         if (!cell) return;
         this.refreshBuddyTarget(cell);
@@ -345,6 +384,10 @@ class BotPlayer extends PlayerTracker {
     decide(cell) {
         if (!cell) return;
         let scan = this.scanEnvironment(cell);
+        if (this.sessionTicksLeft <= 0 && this.logoutCooldown <= 0 && !scan.threat && this.chance(this.getTotalMass() > 900 ? 0.28 : 0.14)) {
+            this.socket.close();
+            return;
+        }
         if (scan.prey && (!scan.threat || scan.prey.score >= scan.threat.score * 0.8)) {
             this.pursuitTarget = scan.prey.node;
             this.pursuitTicks = Math.max(this.pursuitTicks, this.randomInt(7, 15));
@@ -356,6 +399,7 @@ class BotPlayer extends PlayerTracker {
         else if (scan.food) this.setMouseTowardPoint(cell, scan.food.node.position, 0.1);
         else this.setMouseByVector(cell, scan.vector);
         this.planDefensiveAction(cell, scan);
+        this.planMassReliefAction(cell, scan);
         this.planSupportAction(cell, scan);
         this.planOffensiveAction(cell, scan);
     }

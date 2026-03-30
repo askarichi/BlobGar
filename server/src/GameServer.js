@@ -202,6 +202,7 @@ class GameServer {
         this.adminStore = new AdminStore(path.join(__dirname, "data", "admin-store.json"));
         this.adminAuth = new AdminAuth(this);
         this.playerAuth = new PlayerAuth(this, path.join(__dirname, "data", "player-auth-secret.txt"));
+        this.applyAdminLiveOpsSettings(this.adminStore.getLiveOpsSettings());
     }
     start() {
         this.timerLoopBind = this.timerLoop.bind(this);
@@ -228,9 +229,71 @@ class GameServer {
         Log.info("Current game mode is " + this.gameMode.name + ".");
         let botAmount = this.config.serverBots;
         if (botAmount) {
-            for (var i = 0; i < botAmount; i++) this.bots.addBot();
-            Log.info("Added " + botAmount + " player bots.");
+            this.reconcileBotPopulation(true);
+            Log.info("Bot target set to " + botAmount + ".");
         }
+    }
+    sanitizeAdminLiveOpsSettings(input) {
+        let safeInput = input || {},
+            normalized = {};
+        if (safeInput.botTarget != null && safeInput.botTarget !== "") normalized.botTarget = Math.max(0, Math.min(200, Math.round(Number(safeInput.botTarget) || 0)));
+        if (safeInput.mapSpikes != null && safeInput.mapSpikes !== "") normalized.mapSpikes = Math.max(0, Math.min(400, Math.round(Number(safeInput.mapSpikes) || 0)));
+        if (safeInput.foodTarget != null && safeInput.foodTarget !== "") normalized.foodTarget = Math.max(0, Math.min(12000, Math.round(Number(safeInput.foodTarget) || 0)));
+        if (safeInput.foodSpawnAmount != null && safeInput.foodSpawnAmount !== "") normalized.foodSpawnAmount = Math.max(0, Math.min(500, Math.round(Number(safeInput.foodSpawnAmount) || 0)));
+        if (safeInput.playerCap != null && safeInput.playerCap !== "") normalized.playerCap = Math.max(1, Math.min(500, Math.round(Number(safeInput.playerCap) || 0)));
+        return normalized;
+    }
+    getAdminLiveOpsSettingsSnapshot() {
+        return {
+            botTarget: Math.max(0, Math.round(this.config.serverBots || 0)),
+            mapSpikes: Math.max(0, Math.round(this.config.virusMinAmount || 0)),
+            foodTarget: Math.max(0, Math.round(this.config.foodMinAmount || 0)),
+            foodSpawnAmount: Math.max(0, Math.round(this.config.foodSpawnAmount || 0)),
+            playerCap: Math.max(1, Math.round(this.config.serverMaxConnect || 1))
+        };
+    }
+    applyAdminLiveOpsSettings(input) {
+        let next = this.sanitizeAdminLiveOpsSettings(input);
+        if (Object.prototype.hasOwnProperty.call(next, "botTarget")) this.config.serverBots = next.botTarget;
+        if (Object.prototype.hasOwnProperty.call(next, "mapSpikes")) {
+            this.config.virusMinAmount = next.mapSpikes;
+            this.config.virusMaxAmount = Math.max(this.config.virusMaxAmount || 0, next.mapSpikes);
+        }
+        if (Object.prototype.hasOwnProperty.call(next, "foodTarget")) this.config.foodMinAmount = next.foodTarget;
+        if (Object.prototype.hasOwnProperty.call(next, "foodSpawnAmount")) this.config.foodSpawnAmount = next.foodSpawnAmount;
+        if (Object.prototype.hasOwnProperty.call(next, "playerCap")) this.config.serverMaxConnect = next.playerCap;
+        return this.getAdminLiveOpsSettingsSnapshot();
+    }
+    getOnlineBotSockets() {
+        return this.clients.filter(client => client && client.playerTracker && client.playerTracker.isBot && client.playerTracker.isRemoved !== true);
+    }
+    reconcileBotPopulation(forceAdd) {
+        let desired = Math.max(0, Math.round(this.config.serverBots || 0)),
+            bots = this.getOnlineBotSockets(),
+            current = bots.length;
+        if (current < desired) {
+            let toAdd = Math.min(desired - current, forceAdd ? desired : 2);
+            for (let i = 0; i < toAdd; i++) this.bots.addBot();
+        } else if (current > desired) {
+            let toRemove = current - desired;
+            for (let i = current - 1; i >= 0 && toRemove > 0; i--, toRemove--) {
+                let socket = bots[i];
+                if (socket && typeof socket.close === "function") socket.close();
+            }
+        }
+    }
+    trimNodeCollection(nodes, targetCount, predicate) {
+        let removable = nodes.filter(node => node && !node.isRemoved && (!predicate || predicate(node)));
+        if (removable.length <= targetCount) return;
+        let removeCount = removable.length - targetCount;
+        for (let i = 0; i < removeCount; i++) this.removeNode(removable[i]);
+    }
+    reconcileMapResources() {
+        let foodTarget = Math.max(0, Math.round(this.config.foodMinAmount || 0)),
+            virusTarget = Math.max(0, Math.round(this.config.virusMinAmount || 0));
+        if (this.nodesFood.length > foodTarget) this.trimNodeCollection(this.nodesFood, foodTarget);
+        let mapViruses = this.nodesVirus.filter(node => node && !node.isRemoved && !node.isMotherCell && !(node.expiresAt > 0));
+        if (mapViruses.length > virusTarget) this.trimNodeCollection(this.nodesVirus, virusTarget, node => node && !node.isMotherCell && !(node.expiresAt > 0));
     }
     addNode(node) {
         let x = node.position.x,
@@ -280,7 +343,7 @@ class GameServer {
         ws.on("error", error => {
             Log.writeError("[" + logIP + "] " + error.stack);
         });
-        if (this.config.serverMaxConnect && this.socketCount >= this.config.serverMaxConnect) return ws.close(1000, "Connection slots are full!");
+        if (this.config.serverMaxConnect && this.socketCount >= this.config.serverMaxConnect) return ws.close(1000, "Arena is full right now. Please wait in queue for a free slot.");
         if (this.checkIpBan(ws._socket.remoteAddress)) return ws.close(1000, "Your IP was banned!");
         if (this.config.serverIpLimit) {
             let ipConnections = 0;
@@ -642,6 +705,10 @@ class GameServer {
             if (((this.tickCount + 3) % 25) === 0) this.updateDecay();
             this.updateTimedViruses();
             this.updateTimedFreezeOrbs();
+            if ((this.tickCount % 25) === 0) {
+                this.reconcileBotPopulation(false);
+                this.reconcileMapResources();
+            }
             this.tickCount++;
         }
         this.updateClient();
@@ -1618,7 +1685,8 @@ class GameServer {
                 bots: this.getOnlineBotCount(),
                 updateMsAverage: Number((this.updateTimeAvg || 0).toFixed(2))
             },
-            featureFlags: this.adminStore.getFeatureFlags()
+            featureFlags: this.adminStore.getFeatureFlags(),
+            runtimeSettings: this.getAdminLiveOpsSettingsSnapshot()
         });
         if (req.method === "GET" && requestURL.pathname === "/admin/api/players") return this.sendJson(res, 200, {
             results: this.buildAdminPlayerResults(requestURL.searchParams.get("query") || "")
@@ -1626,12 +1694,14 @@ class GameServer {
         if (req.method === "GET" && requestURL.pathname.indexOf("/admin/api/players/") === 0) return this.sendJson(res, 200, this.buildAdminPlayerDetail(requestURL.pathname.split("/").pop()));
         if (req.method === "GET" && requestURL.pathname === "/admin/api/analytics") return this.sendJson(res, 200, this.adminStore.buildAnalytics(30));
         if (req.method === "GET" && requestURL.pathname === "/admin/api/settings") return this.sendJson(res, 200, {
-            featureFlags: this.adminStore.getFeatureFlags()
+            featureFlags: this.adminStore.getFeatureFlags(),
+            runtimeSettings: this.getAdminLiveOpsSettingsSnapshot()
         });
         if (req.method === "GET" && requestURL.pathname === "/admin/api/logs") return this.sendJson(res, 200, {
             logs: this.adminStore.listAudit(Number(requestURL.searchParams.get("limit") || 100))
         });
         if (req.method === "POST" && requestURL.pathname === "/admin/api/live-ops/broadcast") return this.handleAdminBroadcast(req, res, auth.session);
+        if (req.method === "POST" && requestURL.pathname === "/admin/api/live-ops/runtime") return this.handleAdminLiveOpsRuntime(req, res, auth.session);
         if (req.method === "POST" && requestURL.pathname === "/admin/api/players/coins") return this.handleAdminPlayerCoins(req, res, auth.session);
         if (req.method === "POST" && requestURL.pathname === "/admin/api/players/resources") return this.handleAdminPlayerResources(req, res, auth.session);
         if (req.method === "POST" && requestURL.pathname === "/admin/api/players/mute") return this.handleAdminPlayerMute(req, res, auth.session);
@@ -1651,21 +1721,21 @@ class GameServer {
                 error: "Broadcast message is required."
             });
             let broadcastSender = {
-                _name: "NOX",
-                userRole: UserRoleEnum.ADMIN,
+                _name: "(NOX Admin)",
+                userRole: 0,
                 cells: [{
                     color: {
-                        r: 110,
-                        g: 231,
-                        b: 255
+                        r: 236,
+                        g: 68,
+                        b: 68
                     }
                 }]
             };
             this.sendChatMessage(broadcastSender, null, "[broadcast]" + message);
-            this.sendFeedEvent("NOX", message, {
-                r: 110,
-                g: 231,
-                b: 255
+            this.sendFeedEvent("(NOX Admin)", message, {
+                r: 236,
+                g: 68,
+                b: 68
             });
             this.adminStore.appendAudit({
                 actor: session.username,
@@ -1679,6 +1749,28 @@ class GameServer {
             });
             this.sendJson(res, 200, {
                 ok: true
+            });
+        }).catch(error => this.sendJson(res, 400, {
+            ok: false,
+            error: error.message
+        }));
+    }
+    handleAdminLiveOpsRuntime(req, res, session) {
+        this.readJsonBody(req, 32 * 1024).then(payload => {
+            let sanitized = this.sanitizeAdminLiveOpsSettings(payload && payload.runtimeSettings ? payload.runtimeSettings : payload);
+            if (!Object.keys(sanitized).length) return this.sendJson(res, 400, {
+                ok: false,
+                error: "At least one runtime setting is required."
+            });
+            let before = this.getAdminLiveOpsSettingsSnapshot(),
+                after = this.applyAdminLiveOpsSettings(sanitized);
+            this.adminStore.setLiveOpsSettings(after, session.username, this.adminAuth.getIp(req));
+            this.reconcileBotPopulation(true);
+            this.reconcileMapResources();
+            this.sendJson(res, 200, {
+                ok: true,
+                before: before,
+                runtimeSettings: after
             });
         }).catch(error => this.sendJson(res, 400, {
             ok: false,

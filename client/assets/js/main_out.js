@@ -709,7 +709,8 @@
         isConnected = 0;
         let exitingToLobby = !!exitToLobbyRequested;
         let showingResults = !!arenaSession.resultPending;
-        let arenaWasActive = !overlayShown || !!arenaSession.mode;
+        let arenaWasActive = !overlayShown || !!arenaSession.mode,
+            closeReason = String(e && e.reason || "").trim();
         exitToLobbyRequested = 0;
         log.debug(`WS disconnected ${e.code} '${e.reason}'`);
         wjQuery("#connecting").hide();
@@ -726,10 +727,12 @@
             log.info("Returned to lobby.");
             return;
         }
-        if (arenaWasActive) {
-            showOverlay();
-            if (typeof wHandle.showLobbyNotice === "function") wHandle.showLobbyNotice("Connection Lost", "The arena session closed and returned you to the lobby.");
-        } else showOverlay();
+        showOverlay();
+        if (typeof wHandle.showLobbyNotice === "function") {
+            if (/arena is full/i.test(closeReason) || /connection slots are full/i.test(closeReason)) wHandle.showLobbyNotice("Arena Full", "The arena is full right now. Please wait in queue until a pilot leaves or a match ends.");
+            else if (/maintenance/i.test(closeReason)) wHandle.showLobbyNotice("Maintenance Mode", "NOX is in maintenance mode right now. Please try again in a moment.");
+            else if (arenaWasActive) wHandle.showLobbyNotice("Connection Lost", closeReason || "The arena session closed and returned you to the lobby.");
+        }
         resetArenaSession();
         log.info("Socket closed.");
     }
@@ -1120,6 +1123,48 @@
         gameLogsToggle.classList.toggle("is-active", enabled);
         gameLogsToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
         gameLogsToggle.textContent = enabled ? "On" : "Off";
+    }
+    function getArenaThemePalette() {
+        if (settings.darkTheme) return {
+            hudText: "#F5E6C8",
+            hudSoft: "rgba(245, 230, 200, 0.78)",
+            hudMuted: "rgba(185, 169, 138, 0.74)",
+            panelBg: "rgba(14, 14, 14, 0.78)",
+            panelStroke: "rgba(246, 196, 83, 0.14)",
+            leaderboardBg: "rgba(0, 0, 0, 0.40)",
+            leaderboardText: "#FFF6E1",
+            leaderboardAccent: "#F6C453",
+            minimapBg: "rgba(0, 0, 0, 0.38)",
+            minimapStroke: "rgba(255,255,255,0.22)",
+            minimapText: "#DDD",
+            feedText: "#E7DEC6",
+            shadow: "rgba(0, 0, 0, 0.35)",
+            abilityNoticeGradientTop: "rgba(17, 18, 22, 0.88)",
+            abilityNoticeGradientBottom: "rgba(10, 11, 14, 0.72)",
+            abilityNoticeCopy: "#F3E9D1"
+        };
+        return {
+            hudText: "#18222D",
+            hudSoft: "rgba(24, 34, 45, 0.82)",
+            hudMuted: "rgba(57, 73, 92, 0.72)",
+            panelBg: "rgba(255, 255, 255, 0.84)",
+            panelStroke: "rgba(43, 63, 87, 0.12)",
+            leaderboardBg: "rgba(255, 255, 255, 0.70)",
+            leaderboardText: "#15202B",
+            leaderboardAccent: "#B45309",
+            minimapBg: "rgba(255, 255, 255, 0.72)",
+            minimapStroke: "rgba(28, 45, 66, 0.24)",
+            minimapText: "#18222D",
+            feedText: "#16212C",
+            shadow: "rgba(42, 58, 80, 0.10)",
+            abilityNoticeGradientTop: "rgba(255, 255, 255, 0.96)",
+            abilityNoticeGradientBottom: "rgba(240, 245, 250, 0.90)",
+            abilityNoticeCopy: "#16212C"
+        };
+    }
+    function applyArenaThemeClass() {
+        document.body.classList.toggle("nox-map-dark", !!settings.darkTheme);
+        document.body.classList.toggle("nox-map-light", !settings.darkTheme);
     }
     function getEffectiveSoundVolume() {
         if (!soundsVolume) return 0;
@@ -1705,13 +1750,14 @@
         let canvas = chat.canvas,
             ctx = canvas.getContext("2d"),
             latestMessages = chat.messages.slice(-6),
+            palette = getArenaThemePalette(),
             lines = [],
             len = latestMessages.length;
         for (let i = 0; i < len; i++) lines.push([
             {text: latestMessages[i].name,
             color: latestMessages[i].color},
             {text: " " + latestMessages[i].message,
-            color: settings.darkTheme ? "#E7DEC6" : "#F5EBD7"}
+            color: palette.feedText}
         ]);
         let width = 0,
             height = 22 * len + 8;
@@ -1728,8 +1774,8 @@
         canvas.width = width + 20;
         canvas.height = height;
         ctx.textBaseline = "middle";
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+        ctx.shadowBlur = settings.darkTheme ? 10 : 4;
+        ctx.shadowColor = palette.shadow;
         for (let i = 0; i < len; i++) {
             let complexes = lines[i],
                 drawX = 8,
@@ -1753,13 +1799,14 @@
         let canvas = feed.canvas,
             ctx = canvas.getContext("2d"),
             latestMessages = feed.messages.slice(-2),
+            palette = getArenaThemePalette(),
             lines = [],
             len = latestMessages.length;
         for (let i = 0; i < len; i++) lines.push([
             {text: latestMessages[i].name,
             color: latestMessages[i].color},
             {text: " " + latestMessages[i].message,
-            color: settings.darkTheme ? "#E7DEC6" : "#F5EBD7"}
+            color: palette.feedText}
         ]);
         let width = 0,
             lineHeight = 13,
@@ -1779,7 +1826,7 @@
         canvas.height = height;
         ctx.textBaseline = "middle";
         ctx.shadowBlur = 2;
-        ctx.shadowColor = "rgba(0, 0, 0, 0.14)";
+        ctx.shadowColor = palette.shadow;
         for (let i = 0; i < len; i++) {
             let lineWidth = 0,
                 complexes = lines[i];
@@ -1806,6 +1853,7 @@
             ctx = canvas.getContext("2d"),
             title = String(abilityNotice.title || ""),
             message = String(abilityNotice.message || ""),
+            palette = getArenaThemePalette(),
             padX = 16;
         ctx.font = "700 17px Ubuntu";
         let titleWidth = ctx.measureText(title).width;
@@ -1815,10 +1863,10 @@
         canvas.height = 54;
         ctx = canvas.getContext("2d");
         let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        gradient.addColorStop(0, "rgba(17, 18, 22, 0.88)");
-        gradient.addColorStop(1, "rgba(10, 11, 14, 0.72)");
+        gradient.addColorStop(0, palette.abilityNoticeGradientTop);
+        gradient.addColorStop(1, palette.abilityNoticeGradientBottom);
         ctx.fillStyle = gradient;
-        ctx.strokeStyle = "rgba(246, 196, 83, 0.24)";
+        ctx.strokeStyle = palette.panelStroke;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.roundRect(0.5, 0.5, canvas.width - 1, canvas.height - 1, 12);
@@ -1826,14 +1874,14 @@
         ctx.stroke();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+        ctx.shadowBlur = settings.darkTheme ? 14 : 6;
+        ctx.shadowColor = palette.shadow;
         ctx.font = "700 17px Ubuntu";
         ctx.fillStyle = abilityNotice.color || "#F6C453";
         ctx.fillText(title, canvas.width / 2, 18);
         ctx.shadowBlur = 8;
         ctx.font = "600 15px Ubuntu";
-        ctx.fillStyle = settings.darkTheme ? "#F3E9D1" : "#F7EFD9";
+        ctx.fillStyle = palette.abilityNoticeCopy;
         ctx.fillText(message, canvas.width / 2, 37);
         abilityNotice.visible = 1;
     }
@@ -1841,7 +1889,8 @@
         if (!stats.info || settings.hideStats) return stats.visible = 0;
         stats.visible = 1;
         let canvas = stats.canvas,
-            ctx = canvas.getContext("2d");
+            ctx = canvas.getContext("2d"),
+            palette = getArenaThemePalette();
         ctx.font = "14px Ubuntu";
         if (typeof stats.info.botsTotal === "undefined") stats.info.botsTotal = 0;
         if (typeof stats.info.playersDead === "undefined") stats.info.playersDead = 0;
@@ -1860,7 +1909,7 @@
         canvas.width = width;
         canvas.height = rows.length * (14 + 2);
         ctx.font = "14px Ubuntu";
-        ctx.fillStyle = settings.darkTheme ? "#AAA" : "#555";
+        ctx.fillStyle = palette.hudSoft;
         ctx.textBaseline = "top";
         for (let i = 0; i < rows.length; i++) ctx.fillText(rows[i], 2, -2 + i * (14 + 2));
     }
@@ -1885,14 +1934,15 @@
         renderArenaLeaderboard();
         let canvas = leaderboard.canvas,
             ctx = canvas.getContext("2d"),
+            palette = getArenaThemePalette(),
             len = leaderboard.items.length;
         canvas.width = 250;
         canvas.height = leaderboard.type !== "pie" ? 60 + 24 * len : 240;
         ctx.globalAlpha = .4;
-        ctx.fillStyle = "#000";
+        ctx.fillStyle = palette.leaderboardBg;
         ctx.fillRect(0, 0, 250, canvas.height);
         ctx.globalAlpha = 1;
-        ctx.fillStyle = "#FFF";
+        ctx.fillStyle = palette.leaderboardText;
         ctx.font = "30px Ubuntu";
         ctx.fillText("Leaderboard", 125 - ctx.measureText("Leaderboard").width / 2, 40);
         if (leaderboard.type === "pie") {
@@ -1918,7 +1968,7 @@
                 let reg = /\{([\w]+)\}/.exec(text);
                 if (reg) text = text.replace(reg[0], "").trim();
                 let string = getOptionalFieldValue("lbColor", "FAA");
-                ctx.fillStyle = isMe ? "#" + string : "#FFF";
+                ctx.fillStyle = isMe ? "#" + string : palette.leaderboardText;
                 if (leaderboard.type === "ffa") text = (i + 1) + ". " + (text || "An unnamed cell");
                 ctx.textAlign = "left";
                 ctx.fillText(text, 15, 70 + 24 * i);
@@ -2076,14 +2126,15 @@
             centerY = beginY + size / 2,
             miniRadius = size / 2,
             mapRadius = Math.max(1, border.radius),
-            scale = miniRadius / mapRadius;
+            scale = miniRadius / mapRadius,
+            palette = getArenaThemePalette();
         mainCtx.globalAlpha = .38;
-        mainCtx.fillStyle = "#000";
+        mainCtx.fillStyle = palette.minimapBg;
         mainCtx.beginPath();
         mainCtx.arc(centerX, centerY, miniRadius, 0, PI_2);
         mainCtx.fill();
         mainCtx.globalAlpha = 1;
-        mainCtx.strokeStyle = settings.darkTheme ? "rgba(255,255,255,0.22)" : "rgba(32,32,32,0.26)";
+        mainCtx.strokeStyle = palette.minimapStroke;
         mainCtx.lineWidth = 2;
         mainCtx.beginPath();
         mainCtx.arc(centerX, centerY, miniRadius - 1, 0, PI_2);
@@ -2115,7 +2166,7 @@
         mainCtx.restore();
         let cell = cells.byId.get(cells.mine.find(id => cells.byId.has(id)));
         if (cell) {
-            mainCtx.fillStyle = settings.darkTheme ? "#DDD" : "#222";
+            mainCtx.fillStyle = palette.minimapText;
             mainCtx.textAlign = "center";
             mainCtx.font = `${Math.max(11, size / 12)}px Ubuntu`;
             mainCtx.fillText(cell.name, centerX, beginY - 10);
@@ -3261,6 +3312,7 @@
         arenaLeaderboard.self = document.getElementById("nox-arena-leaderboard-self");
         syncArenaLeaderboardUI();
         renderArenaLeaderboard();
+        applyArenaThemeClass();
         if (wHandle.localStorage) soundEnabled = wHandle.localStorage.getItem("nox-sound-enabled") !== "false";
         syncSoundToggleUI();
         if (soundsVolume) {
@@ -3416,7 +3468,12 @@
     };
     wHandle.setDarkTheme = function(arg) {
         settings.darkTheme = arg;
+        applyArenaThemeClass();
         drawStats();
+        drawChat();
+        drawFeed();
+        drawLeaderboard();
+        drawAbilityNotice();
     };
     wHandle.setCellBorder = function(arg) {
         settings.cellBorders = arg;

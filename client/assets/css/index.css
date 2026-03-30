@@ -32,6 +32,139 @@ body {
     color-scheme: dark;
 }
 
+body.nox-map-dark {
+    color-scheme: dark;
+}
+
+body.nox-map-light {
+    color-scheme: light;
+    --nox-bg: rgba(248, 250, 252, 0.92);
+    --nox-bg-soft: rgba(241, 245, 249, 0.88);
+    --nox-panel: rgba(255, 255, 255, 0.90);
+    --nox-panel-soft: rgba(247, 250, 252, 0.86);
+    --nox-border: rgba(39, 58, 82, 0.14);
+    --nox-border-strong: rgba(39, 58, 82, 0.24);
+    --nox-text: #18222d;
+    --nox-text-soft: rgba(24, 34, 45, 0.78);
+    --nox-muted: rgba(56, 72, 90, 0.74);
+    --nox-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+}
+
+body.nox-map-light #nox-arena-hud {
+    border-color: rgba(39, 58, 82, 0.12);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(240, 245, 250, 0.70));
+    box-shadow:
+        0 8px 18px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+body.nox-map-light .nox-arena-hud__item:not(:last-child) {
+    border-right-color: rgba(39, 58, 82, 0.10);
+}
+
+body.nox-map-light #nox-arena-leaderboard {
+    border-color: rgba(39, 58, 82, 0.12);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(241, 245, 249, 0.76));
+    box-shadow:
+        0 6px 16px rgba(15, 23, 42, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+body.nox-map-light .nox-arena-leaderboard__header,
+body.nox-map-light .nox-arena-leaderboard__footer {
+    border-color: rgba(39, 58, 82, 0.10);
+}
+
+body.nox-map-light .nox-arena-leaderboard__toggle {
+    border-color: rgba(39, 58, 82, 0.14);
+    background: rgba(39, 58, 82, 0.04);
+}
+
+body.nox-map-light .nox-arena-leaderboard__toggle:hover,
+body.nox-map-light .nox-arena-leaderboard__toggle:focus {
+    border-color: rgba(39, 58, 82, 0.24);
+    background: rgba(39, 58, 82, 0.08);
+}
+
+body.nox-map-light .nox-arena-leaderboard__entry.is-me,
+body.nox-map-light .nox-arena-leaderboard__self {
+    background: rgba(180, 131, 41, 0.10);
+}
+
+body.nox-map-light .nox-arena-leaderboard__rank,
+body.nox-map-light .nox-arena-leaderboard__self-rank {
+    background: rgba(180, 131, 41, 0.14);
+    color: #8a4a12;
+}
+
+body.nox-map-light .nox-arena-leaderboard__mass {
+    color: rgba(24, 34, 45, 0.74);
+}
+
+body.nox-map-light .nox-arena-leaderboard__exit {
+    border-color: rgba(185, 28, 28, 0.16);
+    background: linear-gradient(180deg, rgba(255, 240, 240, 0.94), rgba(255, 228, 228, 0.90));
+    color: #7f1d1d;
+}
+
+body.nox-map-light .nox-arena-leaderboard__exit:hover,
+body.nox-map-light .nox-arena-leaderboard__exit:focus {
+    border-color: rgba(185, 28, 28, 0.28);
+    background: linear-gradient(180deg, rgba(255, 235, 235, 0.98), rgba(255, 221, 221, 0.94));
+}
+
+body.nox-map-light .nox-arena-ability {
+    color: var(--nox-text);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(237, 243, 249, 0.98));
+    box-shadow:
+        0 12px 18px rgba(15, 23, 42, 0.10),
+        0 0 0 1px rgba(255, 255, 255, 0.65),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+body.nox-map-light .nox-arena-ability::after {
+    background:
+        radial-gradient(circle at 78% 18%, color-mix(in srgb, var(--nox-ability-accent) 18%, transparent), transparent 38%),
+        radial-gradient(circle at 24% 20%, rgba(255, 255, 255, 0.42), transparent 28%),
+        radial-gradient(circle at 50% 110%, rgba(39, 58, 82, 0.05), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(234, 241, 247, 0.98));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.92),
+        0 0 0 1px rgba(39, 58, 82, 0.03),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+body.nox-map-light .nox-arena-ability__key,
+body.nox-map-light .nox-arena-ability__count {
+    background: rgba(255, 255, 255, 0.78);
+}
+
+body.nox-map-light .nox-arena-ability__cooldown {
+    color: rgba(24, 34, 45, 0.84);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+body.nox-map-light #chat_textbox {
+    border-color: rgba(39, 58, 82, 0.16);
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--nox-text);
+}
+
+body.nox-map-light #chat_textbox:focus {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(39, 58, 82, 0.28);
+}
+
+body.nox-map-light #connecting {
+    background: rgba(232, 239, 246, 0.72);
+}
+
+body.nox-map-light #connecting > div {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(39, 58, 82, 0.14);
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10);
+}
+
 button,
 input,
 select {

@@ -24,6 +24,13 @@ class AdminStore {
                 rankingEnabled: true,
                 jellyPhysicsEnabled: true
             },
+            liveOpsSettings: {
+                botTarget: null,
+                mapSpikes: null,
+                foodTarget: null,
+                foodSpawnAmount: null,
+                playerCap: null
+            },
             moderation: {},
             auditLogs: [],
             dailyMetrics: {}
@@ -46,6 +53,7 @@ class AdminStore {
             this.data.auditLogs = Array.isArray(this.data.auditLogs) ? this.data.auditLogs : [];
             this.data.dailyMetrics = this.data.dailyMetrics || {};
             this.data.featureFlags = Object.assign(this.createEmptyStore().featureFlags, this.data.featureFlags || {});
+            this.data.liveOpsSettings = Object.assign(this.createEmptyStore().liveOpsSettings, this.data.liveOpsSettings || {});
         } catch (error) {
             Log.error("AdminStore: Failed to load admin state - " + error.message);
             this.data = this.createEmptyStore();
@@ -266,6 +274,24 @@ class AdminStore {
     }
     getFeatureFlags() {
         return Object.assign({}, this.data.featureFlags);
+    }
+    getLiveOpsSettings() {
+        return Object.assign({}, this.data.liveOpsSettings);
+    }
+    setLiveOpsSettings(nextSettings, actor, ip) {
+        let before = this.getLiveOpsSettings();
+        this.data.liveOpsSettings = Object.assign({}, before, nextSettings || {});
+        this.appendAudit({
+            actor: actor,
+            action: "liveops.settings.update",
+            targetType: "liveops",
+            target: "runtime-settings",
+            before: before,
+            after: this.data.liveOpsSettings,
+            ip: ip
+        });
+        this.save();
+        return this.getLiveOpsSettings();
     }
     dayKey(dateValue) {
         let date = dateValue ? new Date(dateValue) : new Date();
