@@ -1337,6 +1337,7 @@
             if (!mobileControls.enabled || overlayShown || !actionId) return;
             mobileControls.lastTouchAt = Date.now();
             if (button._noxLastPressAt && Date.now() - button._noxLastPressAt < 220) return;
+            event.stopPropagation();
             beginPress(event);
         }, {
             passive: false
@@ -1345,6 +1346,7 @@
             mobileControls.lastTouchAt = Date.now();
             if (!holdable || !actionId) return;
             event.preventDefault();
+            event.stopPropagation();
             releaseMobileAction(actionId, button);
             delete button.dataset.pointerId;
         };
@@ -1383,6 +1385,7 @@
             mobileControls.joystick.addEventListener("pointermove", event => {
                 if (mobileControls.activePointerId !== event.pointerId) return;
                 event.preventDefault();
+                event.stopPropagation();
                 updateMobileJoystickFromPointer(event);
             }, {
                 passive: false
@@ -1390,12 +1393,30 @@
             let endJoystick = event => {
                 if (mobileControls.activePointerId !== event.pointerId) return;
                 event.preventDefault();
+                event.stopPropagation();
                 resetMobileJoystick();
             };
             mobileControls.joystick.addEventListener("pointerup", endJoystick, {
                 passive: false
             });
             mobileControls.joystick.addEventListener("pointercancel", endJoystick, {
+                passive: false
+            });
+            let swallowJoystickTouch = event => {
+                if (!mobileControls.enabled || overlayShown) return;
+                event.preventDefault();
+                event.stopPropagation();
+            };
+            mobileControls.joystick.addEventListener("touchstart", swallowJoystickTouch, {
+                passive: false
+            });
+            mobileControls.joystick.addEventListener("touchmove", swallowJoystickTouch, {
+                passive: false
+            });
+            mobileControls.joystick.addEventListener("touchend", swallowJoystickTouch, {
+                passive: false
+            });
+            mobileControls.joystick.addEventListener("touchcancel", swallowJoystickTouch, {
                 passive: false
             });
             mobileControls.joystick.addEventListener("lostpointercapture", resetMobileJoystick);

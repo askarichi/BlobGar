@@ -183,6 +183,8 @@ select {
     position: fixed;
     inset: 0;
     z-index: 120;
+    overscroll-behavior: none;
+    touch-action: none;
 }
 
 #nox-mobile-landscape-lock {
@@ -274,6 +276,14 @@ body.arena-mode #nox-arena-hud {
     opacity: 1;
     visibility: visible;
     transform: translateX(-50%) translateY(0);
+}
+
+body.nox-mobile-client.arena-mode,
+body.nox-mobile-client.arena-mode #nox-arena-stage,
+body.nox-mobile-client.arena-mode #canvas,
+body.nox-mobile-client.arena-mode #nox-mobile-controls {
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
 }
 
 #nox-arena-leaderboard {
@@ -857,6 +867,7 @@ body.nox-mobile-client.arena-mode #nox-mobile-controls {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+    touch-action: none;
 }
 
 body.nox-mobile-client.arena-mode #nox-arena-abilities {
@@ -956,7 +967,7 @@ body.nox-mobile-client.arena-mode #nox-arena-abilities {
     justify-items: end;
     gap: 10px;
     width: 152px;
-    touch-action: manipulation;
+    touch-action: none;
 }
 
 .nox-mobile-actions__abilities {
@@ -987,7 +998,7 @@ body.nox-mobile-client.arena-mode #nox-arena-abilities {
         inset 0 1px 0 rgba(255, 244, 214, 0.06);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    touch-action: manipulation;
+    touch-action: none;
 }
 
 .nox-mobile-action::before {

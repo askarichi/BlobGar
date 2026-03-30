@@ -475,7 +475,22 @@
                 if (typeof webApp.lockOrientation === "function") webApp.lockOrientation();
             } catch (error) {
             }
+            try {
+                if (typeof webApp.disableVerticalSwipes === "function") webApp.disableVerticalSwipes();
+            } catch (error) {
+            }
             window.setTimeout(noxTryLockLandscape, 120);
+        }
+        function noxSyncTelegramGestureState() {
+            if (!noxTelegramMiniApp()) return;
+            var webApp = window.Telegram.WebApp;
+            var arenaActive = !!(document.body && document.body.classList.contains("arena-mode"));
+            try {
+                if (arenaActive) {
+                    if (typeof webApp.disableVerticalSwipes === "function") webApp.disableVerticalSwipes();
+                } else if (typeof webApp.enableVerticalSwipes === "function") webApp.enableVerticalSwipes();
+            } catch (error) {
+            }
         }
         function noxBootstrapPlayerAuth() {
             var nickInput = document.getElementById("nick");
@@ -742,6 +757,31 @@
             var arenaActive = document.body.classList.contains("arena-mode");
             var portrait = window.innerHeight > window.innerWidth;
             document.body.classList.toggle("nox-mobile-force-landscape", !!(mobileLike && arenaActive && portrait));
+            noxSyncTelegramGestureState();
+        }
+        function noxInstallArenaGestureGuards() {
+            if (window.__noxArenaGestureGuardsInstalled) return;
+            window.__noxArenaGestureGuardsInstalled = true;
+            var suppressArenaTouch = function(event) {
+                if (!noxIsMobileLike()) return;
+                if (!document.body || !document.body.classList.contains("arena-mode")) return;
+                var target = event.target;
+                if (target && (target.closest("#chat_textbox") || target.closest(".nox-scroll-allow"))) return;
+                event.preventDefault();
+                event.stopPropagation();
+            };
+            document.addEventListener("touchmove", suppressArenaTouch, {
+                passive: false,
+                capture: true
+            });
+            document.addEventListener("gesturestart", suppressArenaTouch, {
+                passive: false,
+                capture: true
+            });
+            document.addEventListener("gesturechange", suppressArenaTouch, {
+                passive: false,
+                capture: true
+            });
         }
         function noxTryLockLandscape() {
             if (!noxIsMobileLike()) return;
@@ -1534,6 +1574,7 @@
         }
         window.addEventListener("load", function() {
             noxMountArenaViewport();
+            noxInstallArenaGestureGuards();
             setTimeout(function() {
                 var nickInput = document.getElementById("nick");
                 if (nickInput) {
