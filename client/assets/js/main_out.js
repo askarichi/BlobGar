@@ -1009,6 +1009,8 @@
         document.body.classList.remove("lobby-mode");
         document.body.classList.add("arena-mode");
         updateMobileClientMode();
+        if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
+        if (typeof wHandle.noxTryLockLandscape === "function") wHandle.noxTryLockLandscape();
         wjQuery("#overlays").fadeOut(200);
     }
     function showOverlay() {
@@ -1017,6 +1019,7 @@
         document.body.classList.add("lobby-mode");
         resetMobileJoystick();
         updateMobileClientMode();
+        if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         wjQuery("#overlays").fadeIn(300);
         if (typeof wHandle.noxLoadProfileProgress === "function") wHandle.noxLoadProfileProgress(true);
     }
@@ -2349,6 +2352,22 @@
     function getEffectSpriteBucket(size) {
         return Math.max(12, Math.round(Math.max(1, Number(size) || 0) / 6) * 6);
     }
+    function getJellyPointCap(cell) {
+        let perfLevel = getRenderPerformanceLevel(),
+            mobile = mobileControls.enabled,
+            scaledSize = Math.max(0, cell && cell.s ? cell.s * camera.z : 0),
+            baseCap = mobile ? (perfLevel === 2 ? 84 : perfLevel === 1 ? 72 : 60) : (perfLevel === 2 ? 96 : perfLevel === 1 ? 84 : 72);
+        if (scaledSize > 120) baseCap += mobile ? 6 : 8;
+        return Math.min(CELL_POINTS_MAX, Math.max(CELL_POINTS_MIN + 4, baseCap));
+    }
+    function getJaggedPointCap(cell) {
+        let perfLevel = getRenderPerformanceLevel(),
+            mobile = mobileControls.enabled,
+            scaledSize = Math.max(0, cell && cell.s ? cell.s * camera.z : 0),
+            baseCap = mobile ? (perfLevel === 2 ? 72 : perfLevel === 1 ? 62 : 54) : (perfLevel === 2 ? 84 : perfLevel === 1 ? 74 : 62);
+        if (scaledSize > 120) baseCap += mobile ? 4 : 6;
+        return Math.min(VIRUS_POINTS, Math.max(CELL_POINTS_MIN + 6, baseCap));
+    }
     function getEffectSpriteOversample(perfLevel) {
         let dpr = Math.max(1, Number(wHandle.devicePixelRatio) || 1);
         if (perfLevel === 2) return Math.min(2, dpr);
@@ -2743,8 +2762,8 @@
             return contacts;
         }
         updateNumPoints() {
-            let numPoints = Math.min(Math.max(this.s * camera.z | 0, CELL_POINTS_MIN), CELL_POINTS_MAX);
-            if (this.jagged) numPoints = VIRUS_POINTS;
+            let numPoints = Math.min(Math.max(this.s * camera.z | 0, CELL_POINTS_MIN), getJellyPointCap(this));
+            if (this.jagged) numPoints = Math.min(Math.max(this.s * camera.z | 0, CELL_POINTS_MIN + 2), getJaggedPointCap(this));
             while (this.points.length > numPoints) {
                 let i = Math.random() * this.points.length | 0;
                 this.points.splice(i, 1);
@@ -3118,6 +3137,7 @@
     }
     // 2-var draw-stay cache
     let cachedCurvedNames = {},
+        cachedCurvedGlyphs = {},
         cachedMass  = {};
     function cacheCleanup() {
         let curvedTtl = performanceGuard.level === 0 ? 1600 : performanceGuard.level === 1 ? 2800 : 5000;
@@ -3126,6 +3146,8 @@
                 if (syncAppStamp - cachedCurvedNames[i][j].accessTime >= curvedTtl) delete cachedCurvedNames[i][j];
             if (!Object.keys(cachedCurvedNames[i]).length) delete cachedCurvedNames[i];
         }
+        for (let i in cachedCurvedGlyphs)
+            if (syncAppStamp - cachedCurvedGlyphs[i].accessTime >= curvedTtl) delete cachedCurvedGlyphs[i];
         for (let i in cachedMass)
             if (syncAppStamp - cachedMass[i].accessTime >= 5000) delete cachedMass[i];
         for (let effect in cachedEffectSprites) {
@@ -3321,9 +3343,86 @@
     const curvedNameMeasureCanvas = document.createElement("canvas"),
         curvedNameMeasureCtx = curvedNameMeasureCanvas.getContext("2d"),
         curvedNameFontFamily = "Arial, Helvetica, sans-serif";
+    function getCurvedNameSizeBucket(size) {
+        let bucket = mobileControls.enabled || getRenderPerformanceLevel() < 2 ? 4 : 2;
+        return Math.max(8, Math.round(size / bucket) * bucket);
+    }
+    function getCurvedNameRadiusBucket(radius) {
+        let bucket = mobileControls.enabled || getRenderPerformanceLevel() < 2 ? 8 : 4;
+        return Math.max(12, Math.round(radius / bucket) * bucket);
+    }
+    function getCurvedGlyphOversample(fontSize) {
+        let perfLevel = getRenderPerformanceLevel(),
+            dpr = Math.max(1, Number(wHandle.devicePixelRatio) || 1);
+        if (mobileControls.enabled) {
+            if (perfLevel === 2) return Math.min(1.45, dpr);
+            if (perfLevel === 1) return Math.min(1.25, dpr);
+            return 1;
+        }
+        if (perfLevel === 2) return Math.min(1.85, dpr);
+        if (perfLevel === 1) return Math.min(1.45, dpr);
+        return 1.1;
+    }
+    function buildCurvedGlyphKey(value, fontSize) {
+        let outlineKey = settings.showTextOutline ? 1 : 0,
+            colorKey = getOptionalFieldValue("nameColor", "F7FAFF").toUpperCase();
+        return `${value}:${getCurvedNameSizeBucket(fontSize)}:${outlineKey}:${colorKey}`;
+    }
+    function newCurvedGlyphCache(value, fontSize) {
+        let glyph = String(value || ""),
+            cacheKey = buildCurvedGlyphKey(glyph, fontSize),
+            sizeBucket = getCurvedNameSizeBucket(fontSize),
+            oversample = getCurvedGlyphOversample(sizeBucket),
+            strokeWidth = settings.showTextOutline ? Math.max(sizeBucket * .22, 3.2) : 1.9,
+            advance = 0,
+            paddingX = Math.ceil(sizeBucket * .6 + strokeWidth),
+            paddingY = Math.ceil(sizeBucket * .52 + strokeWidth),
+            logicalWidth = 0,
+            logicalHeight = Math.max(1, Math.ceil(sizeBucket * 1.85 + paddingY * 2)),
+            canvas = document.createElement("canvas"),
+            ctx = canvas.getContext("2d");
+        curvedNameMeasureCtx.font = `700 ${sizeBucket}px ${curvedNameFontFamily}`;
+        advance = Math.max(1, curvedNameMeasureCtx.measureText(glyph).width);
+        logicalWidth = Math.max(1, Math.ceil(advance + paddingX * 2));
+        canvas.width = Math.max(1, Math.ceil(logicalWidth * oversample));
+        canvas.height = Math.max(1, Math.ceil(logicalHeight * oversample));
+        ctx.setTransform(oversample, 0, 0, oversample, 0, 0);
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
+        ctx.font = `700 ${sizeBucket}px ${curvedNameFontFamily}`;
+        ctx.lineWidth = strokeWidth;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.miterLimit = 2;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#" + getOptionalFieldValue("nameColor", "FFF8EE");
+        ctx.strokeStyle = "rgba(8, 8, 10, 0.98)";
+        ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
+        ctx.shadowBlur = sizeBucket * .03;
+        let originX = logicalWidth / 2,
+            originY = logicalHeight / 2;
+        if (strokeWidth > 1) ctx.strokeText(glyph, originX, originY);
+        ctx.fillText(glyph, originX, originY);
+        cachedCurvedGlyphs[cacheKey] = {
+            canvas,
+            width: logicalWidth,
+            height: logicalHeight,
+            advance,
+            originX,
+            originY,
+            fontSize: sizeBucket,
+            accessTime: syncAppStamp
+        };
+        return cachedCurvedGlyphs[cacheKey];
+    }
+    function getCurvedGlyphCache(value, fontSize) {
+        let cacheKey = buildCurvedGlyphKey(value, fontSize);
+        if (!cachedCurvedGlyphs[cacheKey]) return newCurvedGlyphCache(value, fontSize);
+        return cachedCurvedGlyphs[cacheKey];
+    }
     function buildCurvedNameKey(size, radius) {
-        let sizeBucket = Math.max(8, Math.round(size / 2) * 2),
-            radiusBucket = Math.max(12, Math.round(radius / 4) * 4),
+        let sizeBucket = getCurvedNameSizeBucket(size),
+            radiusBucket = getCurvedNameRadiusBucket(radius),
             outlineKey = settings.showTextOutline ? 1 : 0,
             colorKey = getOptionalFieldValue("nameColor", "F7FAFF").toUpperCase();
         return `${sizeBucket}:${radiusBucket}:${outlineKey}:${colorKey}`;
@@ -3350,7 +3449,7 @@
             usableRadius = Math.max(fontSize * 1.6, radius),
             pathRadius = Math.max(fontSize * 2.15, usableRadius - Math.max(fontSize * 1.18, usableRadius * .08)),
             maxWidth = Math.max(fontSize * 4.5, pathRadius * 1.42),
-            oversample = Math.max(2, Math.min(3, Math.ceil((window.devicePixelRatio || 1) * 1.25))),
+            oversample = getCurvedGlyphOversample(fontSize),
             displayText = truncateCurvedName(text, fontSize, maxWidth);
         if (!displayText) return {
             text: "",
@@ -3363,7 +3462,8 @@
         curvedNameMeasureCtx.font = `700 ${fontSize}px ${curvedNameFontFamily}`;
         let glyphs = Array.from(displayText),
             letterSpacing = Math.max(.35, fontSize * .01),
-            widths = glyphs.map(char => Math.max(1, curvedNameMeasureCtx.measureText(char).width)),
+            glyphCaches = glyphs.map(char => getCurvedGlyphCache(char, fontSize)),
+            widths = glyphCaches.map(item => Math.max(1, item.advance)),
             totalAdvance = widths.reduce((sum, width, index) => sum + width + (index < widths.length - 1 ? letterSpacing : 0), 0),
             totalAngle = Math.min(1.22, totalAdvance / Math.max(pathRadius, 1)),
             arcDepth = Math.max(fontSize * .22, pathRadius * (1 - Math.cos(totalAngle / 2))),
@@ -3379,29 +3479,20 @@
         canvas.height = Math.max(1, Math.ceil(logicalHeight * oversample));
         ctx.setTransform(oversample, 0, 0, oversample, 0, 0);
         ctx.clearRect(0, 0, logicalWidth, logicalHeight);
-        ctx.font = `700 ${fontSize}px ${curvedNameFontFamily}`;
-        ctx.lineWidth = strokeWidth;
-        ctx.lineJoin = "round";
-        ctx.lineCap = "round";
-        ctx.miterLimit = 2;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = fillHex;
-        ctx.strokeStyle = "rgba(8, 8, 10, 0.98)";
-        ctx.shadowColor = "rgba(0, 0, 0, 0.34)";
-        ctx.shadowBlur = fontSize * .04;
+        ctx.shadowColor = "rgba(0, 0, 0, 0.18)";
+        ctx.shadowBlur = fontSize * .03;
         let angleCursor = -totalAngle / 2;
         for (let i = 0; i < glyphs.length; i++) {
-            let glyph = glyphs[i],
+            let glyphCache = glyphCaches[i],
                 halfAngle = widths[i] / (2 * pathRadius),
                 angle = angleCursor + halfAngle,
                 px = centerX + Math.sin(angle) * pathRadius,
                 py = centerY + Math.cos(angle) * pathRadius;
+            glyphCache.accessTime = syncAppStamp;
             ctx.save();
             ctx.translate(px, py);
             ctx.rotate(-angle);
-            if (strokeWidth > 1) ctx.strokeText(glyph, 0, 0);
-            ctx.fillText(glyph, 0, 0);
+            ctx.drawImage(glyphCache.canvas, -glyphCache.originX, -glyphCache.originY, glyphCache.width, glyphCache.height);
             ctx.restore();
             angleCursor += halfAngle * 2 + letterSpacing / pathRadius;
         }
@@ -3602,6 +3693,7 @@
             camera.viewMult = Math.sqrt(Math.min(cH / 1080, cW / 1920));
             updateMobileClientMode();
             updateMobileJoystickVisual();
+            if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         };
         wHandle.onresize();
         log.info(`Init completed in ${Date.now() - DATE}ms`);

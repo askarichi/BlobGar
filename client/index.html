@@ -418,6 +418,7 @@
                 if (typeof webApp.lockOrientation === "function") webApp.lockOrientation();
             } catch (error) {
             }
+            window.setTimeout(noxTryLockLandscape, 120);
         }
         function noxBootstrapPlayerAuth() {
             var nickInput = document.getElementById("nick");
@@ -649,6 +650,30 @@
             button.classList.toggle("is-active", active);
             button.textContent = active ? "Exit" : "Enter";
         }
+        function noxIsMobileLike() {
+            try {
+                return !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(hover: none)").matches));
+            } catch (error) {
+                return ("ontouchstart" in window) || (navigator && navigator.maxTouchPoints > 0);
+            }
+        }
+        function noxSyncLandscapePrompt() {
+            var mobileLike = noxIsMobileLike();
+            var arenaActive = document.body.classList.contains("arena-mode");
+            var portrait = window.innerHeight > window.innerWidth;
+            document.body.classList.toggle("nox-mobile-portrait-blocked", !!(mobileLike && arenaActive && portrait));
+        }
+        function noxTryLockLandscape() {
+            if (!noxIsMobileLike()) return;
+            try {
+                if (screen.orientation && typeof screen.orientation.lock === "function") {
+                    var lock = screen.orientation.lock("landscape");
+                    if (lock && lock.catch) lock.catch(function() {});
+                }
+            } catch (error) {
+            }
+            noxSyncLandscapePrompt();
+        }
         function noxToggleFullscreen() {
             var doc = document;
             var root = document.documentElement;
@@ -661,6 +686,7 @@
                 }
                 var request = enter.call(root);
                 if (request && request.catch) request.catch(function() {});
+                window.setTimeout(noxTryLockLandscape, 120);
             } else {
                 var exit = doc.exitFullscreen || doc.webkitExitFullscreen;
                 if (!exit) return;
@@ -679,6 +705,7 @@
                 if (request && request.catch) request.catch(function() {});
             } catch (error) {
             }
+            window.setTimeout(noxTryLockLandscape, 120);
         }
         function noxOpenGuideModal() {
             var modal = document.getElementById("inPageModal");
@@ -1463,6 +1490,13 @@
             });
             document.addEventListener("fullscreenchange", noxSyncFullscreenUI);
             document.addEventListener("webkitfullscreenchange", noxSyncFullscreenUI);
+            document.addEventListener("fullscreenchange", noxSyncLandscapePrompt);
+            document.addEventListener("webkitfullscreenchange", noxSyncLandscapePrompt);
+            window.addEventListener("resize", noxSyncLandscapePrompt, { passive: true });
+            window.addEventListener("orientationchange", function() {
+                window.setTimeout(noxSyncLandscapePrompt, 60);
+                window.setTimeout(noxTryLockLandscape, 120);
+            }, { passive: true });
             if (window.localStorage) {
                 noxMusicEnabled = window.localStorage.getItem("nox-music-enabled") === "true";
                 var storedMusicVolume = parseFloat(window.localStorage.getItem("nox-music-volume"));
@@ -1470,6 +1504,7 @@
             }
             noxSyncMusicToggleUI();
             noxSyncFullscreenUI();
+            noxSyncLandscapePrompt();
             noxSyncAdminAccessButton();
             var musicSlider = document.getElementById("nox-music-volume");
             if (musicSlider) {
@@ -2078,6 +2113,13 @@
         </div>
     </div>
     <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="nox-mobile-landscape-lock" aria-live="polite">
+        <div class="nox-mobile-landscape-lock__panel">
+            <div class="nox-mobile-landscape-lock__icon" aria-hidden="true">↻</div>
+            <div class="nox-mobile-landscape-lock__title">Rotate Your Phone</div>
+            <div class="nox-mobile-landscape-lock__copy">NOX arena is tuned for landscape play. Turn your device sideways and we’ll keep trying fullscreen automatically.</div>
+        </div>
+    </div>
     <div id="nox-arena-hud" aria-live="polite">
         <div class="nox-arena-hud__item">
             <span class="nox-arena-hud__label">Score</span>

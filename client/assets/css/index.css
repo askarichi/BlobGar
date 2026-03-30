@@ -179,6 +179,66 @@ select {
     transition: opacity .2s ease, visibility .2s ease;
 }
 
+#nox-mobile-landscape-lock {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(3, 6, 10, 0.72);
+    backdrop-filter: blur(14px);
+    z-index: 3500;
+    pointer-events: none;
+}
+
+.nox-mobile-landscape-lock__panel {
+    width: min(92vw, 360px);
+    padding: 22px 20px;
+    border-radius: 24px;
+    border: 1px solid rgba(246, 196, 83, 0.18);
+    background: linear-gradient(180deg, rgba(15, 18, 24, 0.94), rgba(10, 12, 18, 0.92));
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+    text-align: center;
+    color: #f7f0dc;
+}
+
+.nox-mobile-landscape-lock__icon {
+    font-size: 34px;
+    line-height: 1;
+    margin-bottom: 10px;
+    color: #f6c453;
+}
+
+.nox-mobile-landscape-lock__title {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.nox-mobile-landscape-lock__copy {
+    margin-top: 8px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: rgba(247, 240, 220, 0.8);
+}
+
+@media (orientation: portrait) {
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-mobile-landscape-lock {
+        display: flex;
+    }
+
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-arena-hud,
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-arena-leaderboard,
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-arena-abilities,
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-mobile-controls,
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #chat_textbox,
+    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #canvas {
+        filter: blur(6px);
+    }
+}
+
 #nox-arena-hud {
     position: absolute;
     top: 12px;
