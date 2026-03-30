@@ -22,10 +22,13 @@
     <script>
         var noxSelectedSkin = null;
         var noxMusicEnabled = false;
+        var noxArenaMusicEnabled = false;
         var noxMusicVolume = 0.34;
         var noxMusicUnlocked = false;
         var noxMusicAudio = null;
+        var noxArenaMusicAudio = null;
         var noxMusicCandidateIndex = 0;
+        var noxArenaMusicSource = "./assets/sound/music/background_music.mp3";
         var noxRankingState = {
             view: "overall",
             snapshot: null,
@@ -209,6 +212,18 @@
             noxMusicAudio.src = noxMusicCandidates[noxMusicCandidateIndex];
             return noxMusicAudio;
         }
+        function noxBuildArenaMusicAudio() {
+            if (noxArenaMusicAudio) return noxArenaMusicAudio;
+            noxArenaMusicAudio = new Audio();
+            noxArenaMusicAudio.loop = true;
+            noxArenaMusicAudio.preload = "none";
+            noxArenaMusicAudio.volume = noxMusicVolume;
+            noxArenaMusicAudio.src = noxArenaMusicSource;
+            return noxArenaMusicAudio;
+        }
+        function noxArenaActive() {
+            return document.body && document.body.classList.contains("arena-mode");
+        }
         function noxSyncMusicVolumeUI() {
             var slider = document.getElementById("nox-music-volume");
             var valueNode = document.getElementById("nox-music-volume-value");
@@ -221,6 +236,7 @@
             if (valueNode) valueNode.textContent = Math.round(value * 100) + "%";
             if (window.localStorage) window.localStorage.setItem("nox-music-volume", value);
             if (noxMusicAudio) noxMusicAudio.volume = noxMusicVolume;
+            if (noxArenaMusicAudio) noxArenaMusicAudio.volume = noxMusicVolume;
         }
         function noxStartMusicPlayback() {
             if (!noxMusicEnabled || !noxMusicUnlocked) return;
@@ -234,21 +250,62 @@
             if (!noxMusicAudio) return;
             noxMusicAudio.pause();
         }
+        function noxStartArenaMusicPlayback() {
+            if (!noxArenaMusicEnabled || !noxMusicUnlocked) return;
+            var audio = noxBuildArenaMusicAudio();
+            if (!audio) return;
+            audio.volume = noxMusicVolume;
+            var playAttempt = audio.play();
+            if (playAttempt && playAttempt.catch) playAttempt.catch(function() {});
+        }
+        function noxStopArenaMusicPlayback() {
+            if (!noxArenaMusicAudio) return;
+            noxArenaMusicAudio.pause();
+        }
+        function noxStopAllMusicPlayback() {
+            noxStopMusicPlayback();
+            noxStopArenaMusicPlayback();
+        }
+        function noxSyncPlaybackMode() {
+            if (!noxMusicUnlocked || document.hidden) {
+                noxStopAllMusicPlayback();
+                return;
+            }
+            if (noxArenaActive()) {
+                noxStopMusicPlayback();
+                if (noxArenaMusicEnabled) noxStartArenaMusicPlayback();
+                else noxStopArenaMusicPlayback();
+                return;
+            }
+            noxStopArenaMusicPlayback();
+            if (noxMusicEnabled) noxStartMusicPlayback();
+            else noxStopMusicPlayback();
+        }
         function noxPrimeMusic() {
             noxMusicUnlocked = true;
-            noxStartMusicPlayback();
+            noxSyncPlaybackMode();
         }
         function noxSetMusicEnabled(arg) {
             noxMusicEnabled = !!arg;
             if (window.localStorage) window.localStorage.setItem("nox-music-enabled", noxMusicEnabled ? "true" : "false");
             noxSyncMusicToggleUI();
-            if (noxMusicEnabled) noxStartMusicPlayback();
-            else noxStopMusicPlayback();
+            noxSyncPlaybackMode();
+        }
+        function noxSetArenaMusicEnabled(arg) {
+            noxArenaMusicEnabled = !!arg;
+            if (window.localStorage) window.localStorage.setItem("nox-arena-music-enabled", noxArenaMusicEnabled ? "true" : "false");
+            noxSyncArenaMusicToggleUI();
+            noxSyncPlaybackMode();
         }
         function noxSyncMusicToggleUI() {
             var toggle = document.getElementById("nox-music-toggle");
             if (!toggle) return;
             toggle.checked = !!noxMusicEnabled;
+        }
+        function noxSyncArenaMusicToggleUI() {
+            var toggle = document.getElementById("nox-arena-music-toggle");
+            if (!toggle) return;
+            toggle.checked = !!noxArenaMusicEnabled;
         }
         function noxToggleMusicEnabled() {
             noxSetMusicEnabled(!noxMusicEnabled);
@@ -1485,8 +1542,8 @@
             document.addEventListener("pointerdown", noxPrimeMusic, { passive: true });
             document.addEventListener("keydown", noxPrimeMusic, { passive: true });
             document.addEventListener("visibilitychange", function() {
-                if (document.hidden) noxStopMusicPlayback();
-                else noxStartMusicPlayback();
+                if (document.hidden) noxStopAllMusicPlayback();
+                else noxSyncPlaybackMode();
             });
             document.addEventListener("fullscreenchange", noxSyncFullscreenUI);
             document.addEventListener("webkitfullscreenchange", noxSyncFullscreenUI);
@@ -1499,10 +1556,12 @@
             }, { passive: true });
             if (window.localStorage) {
                 noxMusicEnabled = window.localStorage.getItem("nox-music-enabled") === "true";
+                noxArenaMusicEnabled = window.localStorage.getItem("nox-arena-music-enabled") === "true";
                 var storedMusicVolume = parseFloat(window.localStorage.getItem("nox-music-volume"));
                 if (isFinite(storedMusicVolume)) noxMusicVolume = Math.max(0, Math.min(1, storedMusicVolume));
             }
             noxSyncMusicToggleUI();
+            noxSyncArenaMusicToggleUI();
             noxSyncFullscreenUI();
             noxSyncLandscapePrompt();
             noxSyncAdminAccessButton();
@@ -1512,6 +1571,7 @@
                 musicSlider.addEventListener("input", noxSyncMusicVolumeUI);
             }
             noxSyncMusicVolumeUI();
+            window.noxSyncPlaybackMode = noxSyncPlaybackMode;
             if (window.wjQuery && wjQuery.fn) {
                 wjQuery("#inPageModal").on("hidden.bs.modal", function() {
                     this.classList.remove("is-skin-view");
@@ -2073,6 +2133,15 @@
                                                 <span id="nox-music-volume-value" class="nox-volume-value">34%</span>
                                             </div>
                                             <input class="nox-volume-slider" id="nox-music-volume" step="0.05" type="range" min="0" max="1" value="0.34">
+                                        </div>
+                                        <div class="nox-audio-control">
+                                            <div class="nox-volume-header">
+                                                <label class="nox-audio-switch" for="nox-arena-music-toggle">
+                                                    <input type="checkbox" id="nox-arena-music-toggle" onchange="noxSetArenaMusicEnabled(this.checked)">
+                                                    <span>Arena Music</span>
+                                                </label>
+                                                <span class="nox-volume-value">Uses Music Volume</span>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="nox-settings-togglegrid">

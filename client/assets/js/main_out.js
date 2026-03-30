@@ -1011,6 +1011,7 @@
         updateMobileClientMode();
         if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         if (typeof wHandle.noxTryLockLandscape === "function") wHandle.noxTryLockLandscape();
+        if (typeof wHandle.noxSyncPlaybackMode === "function") wHandle.noxSyncPlaybackMode();
         wjQuery("#overlays").fadeOut(200);
     }
     function showOverlay() {
@@ -1020,6 +1021,7 @@
         resetMobileJoystick();
         updateMobileClientMode();
         if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
+        if (typeof wHandle.noxSyncPlaybackMode === "function") wHandle.noxSyncPlaybackMode();
         wjQuery("#overlays").fadeIn(300);
         if (typeof wHandle.noxLoadProfileProgress === "function") wHandle.noxLoadProfileProgress(true);
     }
