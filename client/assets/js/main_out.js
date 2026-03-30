@@ -1012,6 +1012,7 @@
         if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         if (typeof wHandle.noxTryLockLandscape === "function") wHandle.noxTryLockLandscape();
         if (typeof wHandle.noxSyncPlaybackMode === "function") wHandle.noxSyncPlaybackMode();
+        if (typeof wHandle.onresize === "function") wHandle.onresize();
         wjQuery("#overlays").fadeOut(200);
     }
     function showOverlay() {
@@ -1022,6 +1023,7 @@
         updateMobileClientMode();
         if (typeof wHandle.noxSyncLandscapePrompt === "function") wHandle.noxSyncLandscapePrompt();
         if (typeof wHandle.noxSyncPlaybackMode === "function") wHandle.noxSyncPlaybackMode();
+        if (typeof wHandle.onresize === "function") wHandle.onresize();
         wjQuery("#overlays").fadeIn(300);
         if (typeof wHandle.noxLoadProfileProgress === "function") wHandle.noxLoadProfileProgress(true);
     }
@@ -3690,8 +3692,19 @@
             sendMouseMove((inputX - mainCanvas.width / 2) / camera.z + camera.x, (inputY - mainCanvas.height / 2) / camera.z + camera.y);
         }, 60);
         wHandle.onresize = function() {
-            let cW = mainCanvas.width = wHandle.innerWidth,
-                cH = mainCanvas.height = wHandle.innerHeight;
+            let stage = document.getElementById("nox-arena-stage"),
+                useRotatedStage = document.body.classList.contains("nox-mobile-force-landscape") && !!stage,
+                cW = 0,
+                cH = 0;
+            if (useRotatedStage) {
+                cW = Math.max(1, stage.clientWidth || Math.max(wHandle.innerWidth, wHandle.innerHeight));
+                cH = Math.max(1, stage.clientHeight || Math.min(wHandle.innerWidth, wHandle.innerHeight));
+            } else {
+                cW = wHandle.innerWidth;
+                cH = wHandle.innerHeight;
+            }
+            mainCanvas.width = cW;
+            mainCanvas.height = cH;
             camera.viewMult = Math.sqrt(Math.min(cH / 1080, cW / 1920));
             updateMobileClientMode();
             updateMobileJoystickVisual();

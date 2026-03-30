@@ -707,6 +707,29 @@
             button.classList.toggle("is-active", active);
             button.textContent = active ? "Exit" : "Enter";
         }
+        function noxMountArenaViewport() {
+            var existing = document.getElementById("nox-arena-stage");
+            if (existing) return existing;
+            var anchor = document.getElementById("connecting");
+            if (!anchor || !anchor.parentNode) return null;
+            var stage = document.createElement("div");
+            stage.id = "nox-arena-stage";
+            anchor.parentNode.insertBefore(stage, anchor);
+            [
+                "connecting",
+                "canvas",
+                "chat_textbox",
+                "nox-mobile-landscape-lock",
+                "nox-arena-hud",
+                "nox-arena-leaderboard",
+                "nox-arena-abilities",
+                "nox-mobile-controls"
+            ].forEach(function(id) {
+                var node = document.getElementById(id);
+                if (node) stage.appendChild(node);
+            });
+            return stage;
+        }
         function noxIsMobileLike() {
             try {
                 return !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(hover: none)").matches));
@@ -718,7 +741,7 @@
             var mobileLike = noxIsMobileLike();
             var arenaActive = document.body.classList.contains("arena-mode");
             var portrait = window.innerHeight > window.innerWidth;
-            document.body.classList.toggle("nox-mobile-portrait-blocked", !!(mobileLike && arenaActive && portrait));
+            document.body.classList.toggle("nox-mobile-force-landscape", !!(mobileLike && arenaActive && portrait));
         }
         function noxTryLockLandscape() {
             if (!noxIsMobileLike()) return;
@@ -1510,6 +1533,7 @@
             });
         }
         window.addEventListener("load", function() {
+            noxMountArenaViewport();
             setTimeout(function() {
                 var nickInput = document.getElementById("nick");
                 if (nickInput) {

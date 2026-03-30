@@ -179,6 +179,12 @@ select {
     transition: opacity .2s ease, visibility .2s ease;
 }
 
+#nox-arena-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+}
+
 #nox-mobile-landscape-lock {
     position: fixed;
     inset: 0;
@@ -225,17 +231,19 @@ select {
 }
 
 @media (orientation: portrait) {
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-mobile-landscape-lock {
-        display: flex;
+    body.nox-mobile-client.arena-mode.nox-mobile-force-landscape #nox-arena-stage {
+        top: 50%;
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        width: 100vh;
+        height: 100vw;
+        transform: translate(-50%, -50%) rotate(90deg);
+        transform-origin: center center;
     }
 
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-arena-hud,
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-arena-leaderboard,
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-arena-abilities,
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #nox-mobile-controls,
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #chat_textbox,
-    body.nox-mobile-client.arena-mode.nox-mobile-portrait-blocked #canvas {
-        filter: blur(6px);
+    body.nox-mobile-client.arena-mode.nox-mobile-force-landscape #nox-mobile-landscape-lock {
+        display: none;
     }
 }
 
