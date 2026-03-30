@@ -2181,16 +2181,32 @@
         for (let i = 0; i < drawList.length; i++) drawList[i].update(syncAppStamp);
         cameraUpdate();
         updateArenaHud();
+        let drawBounds = getWorldViewBounds(96),
+            jellyBounds = getWorldViewBounds(180),
+            visibleCells = [],
+            jellyCells = [],
+            jellyCellIds = {};
+        for (let i = 0; i < drawList.length; i++) {
+            let cell = drawList[i];
+            if (!cell) continue;
+            if (isCellInsideView(cell, drawBounds, 0)) visibleCells.push(cell);
+            if (settings.jellyPhysics && cell.usesJellyPhysics() && isCellInsideView(cell, jellyBounds, 0)) {
+                jellyCells.push(cell);
+                jellyCellIds[cell.id] = 1;
+            }
+        }
         if (settings.jellyPhysics && performanceGuard.frameIndex % getJellyUpdateStride() === 0) {
-            updateQuadtree();
+            updateQuadtree(jellyCells, jellyBounds);
             for (let i = 0; i < drawList.length; i++) {
                 let cell = drawList[i];
-                if (cell.usesJellyPhysics()) {
+                if (jellyCellIds[cell.id]) {
                     cell.updateNumPoints();
                     cell.movePoints();
                 } else if (cell.points.length) {
-                    cell.points.length = 0;
-                    cell.pointsVel.length = 0;
+                    if (!cell.usesJellyPhysics()) {
+                        cell.points.length = 0;
+                        cell.pointsVel.length = 0;
+                    }
                 }
             }
         } else quadtree = null;
@@ -2201,7 +2217,7 @@
         toCamera(mainCtx);
         drawBorders();
         drawSectors();
-        for (let i = 0; i < drawList.length; i++) drawList[i].draw(mainCtx);
+        for (let i = 0; i < visibleCells.length; i++) visibleCells[i].draw(mainCtx);
         fromCamera(mainCtx);
         quadtree = null;
         mainCtx.scale(camera.viewMult, camera.viewMult);
@@ -2236,6 +2252,33 @@
     }
     function cellSort(a, b) {
         return a.s === b.s ? a.id - b.id : a.s - b.s;
+    }
+    function getWorldViewBounds(margin) {
+        let extra = Math.max(0, Number(margin) || 0),
+            halfW = mainCanvas.width / camera.z / 2 + extra,
+            halfH = mainCanvas.height / camera.z / 2 + extra;
+        return {
+            left: camera.x - halfW,
+            right: camera.x + halfW,
+            top: camera.y - halfH,
+            bottom: camera.y + halfH
+        };
+    }
+    function getCellRenderPadding(cell) {
+        let padding = Math.max(26, cell.s * .18);
+        if (cell.shielded || cell.frozen) padding = Math.max(padding, cell.s * .34);
+        if (cell.spiked) padding = Math.max(padding, cell.s * .28);
+        if (cell.freezeOrb || cell.spikeOrb) padding = Math.max(padding, cell.s * .22);
+        if (settings.showNames && cell.name && !cell.jagged && cell.s >= 44) padding = Math.max(padding, cell.s * .55);
+        return padding;
+    }
+    function isCellInsideView(cell, bounds, extraPadding) {
+        if (!cell || !bounds) return false;
+        let radius = cell.s + getCellRenderPadding(cell) + Math.max(0, Number(extraPadding) || 0);
+        return cell.x + radius >= bounds.left &&
+            cell.x - radius <= bounds.right &&
+            cell.y + radius >= bounds.top &&
+            cell.y - radius <= bounds.bottom;
     }
     function sqDist(a, b) {
         return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
@@ -2280,21 +2323,337 @@
         camera.z += (target.z * camera.viewMult * mouse.z - camera.z) / 9;
         camera.zScale = 1 / camera.z;
     }
-    function updateQuadtree() {
+    function updateQuadtree(sourceCells, bounds) {
         if (!window.PointQuadTree) {
             quadtree = null;
             return;
         }
-        let w = mainCanvas.width / camera.z,
-            h = mainCanvas.height / camera.z,
-            x = camera.x - w / 2,
-            y = camera.y - h / 2;
+        let area = bounds || getWorldViewBounds(0),
+            source = Array.isArray(sourceCells) ? sourceCells : cells.list,
+            w = area.right - area.left,
+            h = area.bottom - area.top,
+            x = area.left,
+            y = area.top;
+        if (!(w > 0) || !(h > 0) || !source.length) {
+            quadtree = null;
+            return;
+        }
         quadtree = new window.PointQuadTree(x, y, w, h, QUADTREE_MAX_POINTS);
-        for (let i = 0; i < cells.list.length; i++) {
-            let cell = cells.list[i];
+        for (let i = 0; i < source.length; i++) {
+            let cell = source[i];
             if (!cell || !cell.points || !cell.points.length || !cell.usesJellyPhysics()) continue;
             for (let j = 0; j < cell.points.length; j++) quadtree.insert(cell.points[j]);
         }
+    }
+    let cachedEffectSprites = {};
+    function getEffectSpriteBucket(size) {
+        return Math.max(12, Math.round(Math.max(1, Number(size) || 0) / 6) * 6);
+    }
+    function getEffectSpriteOversample(perfLevel) {
+        let dpr = Math.max(1, Number(wHandle.devicePixelRatio) || 1);
+        if (perfLevel === 2) return Math.min(2, dpr);
+        if (perfLevel === 1) return Math.min(1.6, Math.max(1.2, dpr));
+        return 1.15;
+    }
+    function getEffectSpriteLogicalSize(effect, size) {
+        switch (effect) {
+            case "shieldAura":
+                return size * 2.9;
+            case "frozenOuter":
+                return size * 3.05;
+            case "frozenInner":
+                return size * 2.32;
+            case "freezeOrb":
+                return size * 2.7;
+            case "spikeOrb":
+                return size * 2.72;
+            default:
+                return size * 2.6;
+        }
+    }
+    function createEffectSpriteCanvas(logicalSize, perfLevel) {
+        let oversample = getEffectSpriteOversample(perfLevel),
+            canvas = document.createElement("canvas"),
+            pxSize = Math.max(4, Math.ceil(logicalSize * oversample)),
+            ctx = null;
+        canvas.width = pxSize;
+        canvas.height = pxSize;
+        ctx = canvas.getContext("2d");
+        ctx.scale(oversample, oversample);
+        ctx.translate(logicalSize / 2, logicalSize / 2);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = perfLevel === 2 ? "high" : "medium";
+        return {
+            canvas,
+            ctx,
+            logicalSize
+        };
+    }
+    function buildShieldAuraSprite(size, perfLevel) {
+        let sprite = createEffectSpriteCanvas(getEffectSpriteLogicalSize("shieldAura", size), perfLevel),
+            ctx = sprite.ctx,
+            pulse = .9,
+            glowRadius = size * (1.12 + pulse * .05),
+            shapeCount = perfLevel === 2 ? 4 : perfLevel === 1 ? 2 : 0,
+            orbitArcCount = perfLevel === 2 ? 3 : perfLevel === 1 ? 1 : 0;
+        if (perfLevel > 0) {
+            let aura = ctx.createRadialGradient(0, 0, size * .6, 0, 0, glowRadius);
+            aura.addColorStop(0, "rgba(255,92,82,0)");
+            aura.addColorStop(.72, "rgba(255,92,82,0.2)");
+            aura.addColorStop(1, "rgba(255,92,82,0)");
+            ctx.fillStyle = aura;
+            ctx.beginPath();
+            ctx.arc(0, 0, glowRadius, 0, PI_2);
+            ctx.fill();
+        }
+        ctx.strokeStyle = "rgba(255,110,96,0.88)";
+        ctx.lineWidth = Math.max(3, size * .045);
+        ctx.shadowBlur = perfLevel === 2 ? 16 + size * .08 : perfLevel === 1 ? 8 + size * .04 : 0;
+        ctx.shadowColor = "rgba(255,82,72,0.42)";
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 1.03, 0, PI_2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        for (let i = 0; i < shapeCount; i++) {
+            let shapeAngle = i * (PI_2 / 4),
+                shapeRadius = size * 1.18,
+                shapeX = Math.cos(shapeAngle) * shapeRadius,
+                shapeY = Math.sin(shapeAngle) * shapeRadius,
+                shapeSize = Math.max(4, size * .09);
+            ctx.save();
+            ctx.translate(shapeX, shapeY);
+            ctx.rotate(shapeAngle + Math.PI / 4);
+            ctx.fillStyle = "rgba(255,152,112,0.48)";
+            ctx.beginPath();
+            ctx.moveTo(0, -shapeSize);
+            ctx.lineTo(shapeSize * .72, 0);
+            ctx.lineTo(0, shapeSize);
+            ctx.lineTo(-shapeSize * .72, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        if (orbitArcCount > 0) {
+            ctx.strokeStyle = "rgba(255,132,112,0.48)";
+            ctx.lineWidth = Math.max(1.2, size * .014);
+            ctx.beginPath();
+            for (let i = 0; i < orbitArcCount; i++) {
+                let start = i * (PI_2 / Math.max(orbitArcCount, 1));
+                ctx.arc(0, 0, size * 1.11, start, start + .55);
+            }
+            ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(255,196,164,0.62)";
+        ctx.lineWidth = Math.max(1.4, size * .018);
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 1.015, 0, 1.35);
+        ctx.stroke();
+        return sprite.canvas;
+    }
+    function buildFrozenOuterSprite(size, perfLevel) {
+        let sprite = createEffectSpriteCanvas(getEffectSpriteLogicalSize("frozenOuter", size), perfLevel),
+            ctx = sprite.ctx,
+            pulse = .9,
+            shardCount = perfLevel === 2 ? 6 : perfLevel === 1 ? 3 : 0;
+        if (perfLevel > 0) {
+            let aura = ctx.createRadialGradient(0, 0, size * .58, 0, 0, size * 1.24);
+            aura.addColorStop(0, "rgba(112,214,255,0)");
+            aura.addColorStop(.58, "rgba(96,206,255,0.22)");
+            aura.addColorStop(.82, "rgba(150,236,255,0.24)");
+            aura.addColorStop(1, "rgba(150,236,255,0)");
+            ctx.fillStyle = aura;
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 1.24, 0, PI_2);
+            ctx.fill();
+        }
+        for (let i = 0; i < shardCount; i++) {
+            let angle = i * (PI_2 / 6),
+                radius = size * (1.03 + ((i % 2) ? .04 : .08) + pulse * .015),
+                shardX = Math.cos(angle) * radius,
+                shardY = Math.sin(angle) * radius,
+                shardSize = Math.max(4, size * .11);
+            ctx.save();
+            ctx.translate(shardX, shardY);
+            ctx.rotate(angle + Math.PI / 2);
+            ctx.fillStyle = "rgba(206,248,255,0.34)";
+            ctx.beginPath();
+            ctx.moveTo(0, -shardSize);
+            ctx.lineTo(shardSize * .48, 0);
+            ctx.lineTo(0, shardSize * .7);
+            ctx.lineTo(-shardSize * .48, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        ctx.strokeStyle = "rgba(196,242,255,0.92)";
+        ctx.lineWidth = Math.max(4, size * .05);
+        ctx.shadowBlur = perfLevel === 2 ? 18 + size * .08 : perfLevel === 1 ? 8 + size * .04 : 0;
+        ctx.shadowColor = "rgba(114,224,255,0.48)";
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 1.01, 0, PI_2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(248,253,255,0.66)";
+        ctx.lineWidth = Math.max(1.4, size * .018);
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 1.08, 0, 1.24);
+        ctx.stroke();
+        return sprite.canvas;
+    }
+    function buildFrozenInnerSprite(size, perfLevel) {
+        let sprite = createEffectSpriteCanvas(getEffectSpriteLogicalSize("frozenInner", size), perfLevel),
+            ctx = sprite.ctx;
+        let frost = ctx.createRadialGradient(-size * .24, -size * .3, size * .08, 0, 0, size * 1.05);
+        frost.addColorStop(0, "rgba(250,254,255,0.42)");
+        frost.addColorStop(.28, "rgba(188,236,255,0.36)");
+        frost.addColorStop(.64, "rgba(112,198,255,0.3)");
+        frost.addColorStop(1, "rgba(62,120,220,0.16)");
+        ctx.fillStyle = frost;
+        ctx.fillRect(-size - 14, -size - 14, size * 2 + 28, size * 2 + 28);
+        let chillBand = ctx.createLinearGradient(-size * .9, -size * .8, size, size * .9);
+        chillBand.addColorStop(0, "rgba(255,255,255,0)");
+        chillBand.addColorStop(.22, "rgba(232,250,255,0.18)");
+        chillBand.addColorStop(.5, "rgba(146,222,255,0.24)");
+        chillBand.addColorStop(.76, "rgba(228,250,255,0.16)");
+        chillBand.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = chillBand;
+        ctx.fillRect(-size - 10, -size - 10, size * 2 + 20, size * 2 + 20);
+        let frostLineCount = perfLevel === 2 ? 3 : perfLevel === 1 ? 1 : 0;
+        ctx.strokeStyle = "rgba(238,251,255,0.34)";
+        ctx.lineWidth = Math.max(1.2, size * .02);
+        for (let i = 0; i < frostLineCount; i++) {
+            let mapped = frostLineCount === 1 ? 0 : i - 1,
+                offset = mapped * size * .23;
+            ctx.beginPath();
+            ctx.moveTo(-size * .74, -size * .1 + offset);
+            ctx.lineTo(-size * .18, -size * .36 + offset * .65);
+            ctx.lineTo(size * .08, -size * .18 + offset * .35);
+            ctx.lineTo(size * .58, -size * .44 + offset * .2);
+            ctx.stroke();
+        }
+        if (perfLevel === 2) {
+            ctx.strokeStyle = "rgba(176,230,255,0.42)";
+            ctx.lineWidth = Math.max(1.1, size * .016);
+            for (let i = 0; i < 3; i++) {
+                let angle = i * 1.45,
+                    startX = Math.cos(angle) * size * .2,
+                    startY = Math.sin(angle) * size * .18;
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(startX + Math.cos(angle + .2) * size * .22, startY + Math.sin(angle + .2) * size * .22);
+                ctx.lineTo(startX + Math.cos(angle - .28) * size * .36, startY + Math.sin(angle - .28) * size * .36);
+                ctx.stroke();
+            }
+        }
+        return sprite.canvas;
+    }
+    function buildFreezeOrbSprite(size, perfLevel) {
+        let sprite = createEffectSpriteCanvas(getEffectSpriteLogicalSize("freezeOrb", size), perfLevel),
+            ctx = sprite.ctx,
+            outer = size * 1.22;
+        if (perfLevel > 0) {
+            let aura = ctx.createRadialGradient(0, 0, size * .2, 0, 0, outer);
+            aura.addColorStop(0, "rgba(235,248,255,0.92)");
+            aura.addColorStop(.18, "rgba(162,231,255,0.85)");
+            aura.addColorStop(.46, "rgba(130,182,255,0.42)");
+            aura.addColorStop(.58, "rgba(82,196,255,0.32)");
+            aura.addColorStop(1, "rgba(82,196,255,0)");
+            ctx.fillStyle = aura;
+            ctx.beginPath();
+            ctx.arc(0, 0, outer, 0, PI_2);
+            ctx.fill();
+        }
+        let core = ctx.createRadialGradient(-size * .18, -size * .22, size * .08, 0, 0, size);
+        core.addColorStop(0, "rgba(255,255,255,0.98)");
+        core.addColorStop(.32, "rgba(189,239,255,0.96)");
+        core.addColorStop(.74, "rgba(89,190,255,0.82)");
+        core.addColorStop(1, "rgba(33,112,188,0.86)");
+        ctx.fillStyle = core;
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, PI_2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.arc(-size * .26, -size * .24, Math.max(1.5, size * .16), 0, PI_2);
+        ctx.fill();
+        return sprite.canvas;
+    }
+    function buildSpikeOrbSprite(size, perfLevel) {
+        let sprite = createEffectSpriteCanvas(getEffectSpriteLogicalSize("spikeOrb", size), perfLevel),
+            ctx = sprite.ctx,
+            outer = size * 1.24;
+        if (perfLevel > 0) {
+            let glow = ctx.createRadialGradient(0, 0, size * .18, 0, 0, outer);
+            glow.addColorStop(0, "rgba(255,236,214,0.95)");
+            glow.addColorStop(.22, "rgba(255,162,108,0.88)");
+            glow.addColorStop(.58, "rgba(255,104,62,0.34)");
+            glow.addColorStop(1, "rgba(255,104,62,0)");
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(0, 0, outer, 0, PI_2);
+            ctx.fill();
+        }
+        let core = ctx.createRadialGradient(-size * .15, -size * .16, size * .08, 0, 0, size);
+        core.addColorStop(0, "rgba(255,255,255,0.96)");
+        core.addColorStop(.28, "rgba(255,204,152,0.94)");
+        core.addColorStop(.68, "rgba(255,120,64,0.88)");
+        core.addColorStop(1, "rgba(121,28,18,0.88)");
+        ctx.fillStyle = core;
+        ctx.beginPath();
+        ctx.arc(0, 0, size, 0, PI_2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,244,224,0.82)";
+        ctx.beginPath();
+        ctx.arc(-size * .24, -size * .22, Math.max(1.5, size * .14), 0, PI_2);
+        ctx.fill();
+        return sprite.canvas;
+    }
+    function newEffectSpriteCache(effect, size, perfLevel) {
+        let bucket = getEffectSpriteBucket(size),
+            builder = null;
+        switch (effect) {
+            case "shieldAura":
+                builder = buildShieldAuraSprite;
+                break;
+            case "frozenOuter":
+                builder = buildFrozenOuterSprite;
+                break;
+            case "frozenInner":
+                builder = buildFrozenInnerSprite;
+                break;
+            case "freezeOrb":
+                builder = buildFreezeOrbSprite;
+                break;
+            case "spikeOrb":
+                builder = buildSpikeOrbSprite;
+                break;
+        }
+        if (!builder) return null;
+        return {
+            canvas: builder(bucket, perfLevel),
+            baseSize: bucket,
+            logicalSize: getEffectSpriteLogicalSize(effect, bucket),
+            accessTime: syncAppStamp
+        };
+    }
+    function getEffectSpriteCache(effect, size, perfLevel) {
+        let bucket = getEffectSpriteBucket(size),
+            cacheKey = `${bucket}:${perfLevel}`;
+        cachedEffectSprites[effect] = cachedEffectSprites[effect] || {};
+        if (!cachedEffectSprites[effect][cacheKey]) cachedEffectSprites[effect][cacheKey] = newEffectSpriteCache(effect, size, perfLevel);
+        return cachedEffectSprites[effect][cacheKey];
+    }
+    function drawEffectCacheSprite(ctx, cache, x, y, drawSize, alpha, rotation) {
+        if (!cache || !cache.canvas) return;
+        let scale = Math.max(.01, (Number(drawSize) || cache.baseSize) / Math.max(cache.baseSize, 1)),
+            size = cache.logicalSize * scale;
+        cache.accessTime = syncAppStamp;
+        ctx.save();
+        ctx.globalAlpha *= Math.max(0, Math.min(alpha == null ? 1 : alpha, 1));
+        ctx.translate(x, y);
+        if (rotation) ctx.rotate(rotation);
+        ctx.drawImage(cache.canvas, -size / 2, -size / 2, size, size);
+        ctx.restore();
     }
     class Cell {
         constructor(id, x, y, s, name, color, skin, flags) {
@@ -2567,53 +2926,20 @@
         }
         drawShieldAura(ctx, alpha) {
             let pulse = .72 + .28 * Math.sin(syncAppStamp / 170 + this.id * .11),
-                ringColor = "#ff5c52",
-                hotColor = "#ff9a62",
-                glowRadius = this.s * (1.12 + pulse * .05),
                 arcStart = (syncAppStamp / 560 + this.id * .07) % PI_2,
                 perfLevel = getRenderPerformanceLevel(),
-                shapeCount = perfLevel === 2 ? 4 : perfLevel === 1 ? 2 : 0,
-                orbitArcCount = perfLevel === 2 ? 3 : perfLevel === 1 ? 1 : 0;
+                orbitArcCount = perfLevel === 2 ? 3 : perfLevel === 1 ? 1 : 0,
+                baseSprite = getEffectSpriteCache("shieldAura", this.s, perfLevel);
             ctx.save();
-            ctx.globalAlpha = alpha;
-            if (perfLevel > 0) {
-                let aura = ctx.createRadialGradient(this.x, this.y, this.s * .6, this.x, this.y, glowRadius);
-                aura.addColorStop(0, "rgba(255,92,82,0)");
-                aura.addColorStop(.72, "rgba(255,92,82," + (0.12 + pulse * .08) + ")");
-                aura.addColorStop(1, "rgba(255,92,82,0)");
-                ctx.fillStyle = aura;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, glowRadius, 0, PI_2);
-                ctx.fill();
-            }
-
+            ctx.globalAlpha = alpha * (.84 + pulse * .12);
+            drawEffectCacheSprite(ctx, baseSprite, this.x, this.y, this.s, 1);
             this.traceShapePath(ctx);
             ctx.strokeStyle = "rgba(255,110,96," + (0.7 + pulse * .18) + ")";
             ctx.lineWidth = Math.max(3, this.s * .045);
-            ctx.shadowBlur = perfLevel === 2 ? 16 + this.s * .08 : perfLevel === 1 ? 8 + this.s * .04 : 0;
-            ctx.shadowColor = "rgba(255,82,72,0.42)";
+            ctx.shadowBlur = perfLevel === 2 ? 7 + this.s * .02 : perfLevel === 1 ? 4 + this.s * .015 : 0;
+            ctx.shadowColor = "rgba(255,82,72,0.28)";
             ctx.stroke();
-
             ctx.shadowBlur = 0;
-            for (let i = 0; i < shapeCount; i++) {
-                let shapeAngle = arcStart + i * (PI_2 / 4),
-                    shapeRadius = this.s * (1.16 + pulse * 0.02),
-                    shapeX = this.x + Math.cos(shapeAngle) * shapeRadius,
-                    shapeY = this.y + Math.sin(shapeAngle) * shapeRadius,
-                    shapeSize = Math.max(4, this.s * 0.09);
-                ctx.save();
-                ctx.translate(shapeX, shapeY);
-                ctx.rotate(shapeAngle + Math.PI / 4);
-                ctx.fillStyle = "rgba(255,152,112," + (0.34 + pulse * .14) + ")";
-                ctx.beginPath();
-                ctx.moveTo(0, -shapeSize);
-                ctx.lineTo(shapeSize * .72, 0);
-                ctx.lineTo(0, shapeSize);
-                ctx.lineTo(-shapeSize * .72, 0);
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
-            }
             if (orbitArcCount > 0) {
                 ctx.strokeStyle = "rgba(255,132,112," + (0.4 + pulse * .12) + ")";
                 ctx.lineWidth = Math.max(1.2, this.s * .014);
@@ -2634,95 +2960,20 @@
         drawFrozenOverlay(ctx, alpha) {
             let pulse = .82 + .18 * Math.sin(syncAppStamp / 220 + this.id * .09),
                 sweep = (syncAppStamp / 680 + this.id * .05) % PI_2,
-                shardRot = (syncAppStamp / 900 + this.id * .03) % PI_2,
-                outerGlowRadius = this.s * (1.22 + pulse * .05),
                 perfLevel = getRenderPerformanceLevel(),
-                shardCount = perfLevel === 2 ? 6 : perfLevel === 1 ? 3 : 0,
-                frostLineCount = perfLevel === 2 ? 3 : perfLevel === 1 ? 1 : 0;
+                outerSprite = getEffectSpriteCache("frozenOuter", this.s, perfLevel),
+                innerSprite = getEffectSpriteCache("frozenInner", this.s, perfLevel);
 
             ctx.save();
-            ctx.globalAlpha = alpha;
-            if (perfLevel > 0) {
-                let aura = ctx.createRadialGradient(this.x, this.y, this.s * .58, this.x, this.y, outerGlowRadius);
-                aura.addColorStop(0, "rgba(112,214,255,0)");
-                aura.addColorStop(.58, "rgba(96,206,255," + (0.14 + pulse * .08) + ")");
-                aura.addColorStop(.82, "rgba(150,236,255," + (0.16 + pulse * .08) + ")");
-                aura.addColorStop(1, "rgba(150,236,255,0)");
-                ctx.fillStyle = aura;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, outerGlowRadius, 0, PI_2);
-                ctx.fill();
-            }
-
-            for (let i = 0; i < shardCount; i++) {
-                let angle = shardRot + i * (PI_2 / 6),
-                    radius = this.s * (1.03 + ((i % 2) ? .04 : .08) + pulse * .015),
-                    shardX = this.x + Math.cos(angle) * radius,
-                    shardY = this.y + Math.sin(angle) * radius,
-                    shardSize = Math.max(4, this.s * .11);
-                ctx.save();
-                ctx.translate(shardX, shardY);
-                ctx.rotate(angle + Math.PI / 2);
-                ctx.fillStyle = "rgba(206,248,255," + (0.24 + pulse * .12) + ")";
-                ctx.beginPath();
-                ctx.moveTo(0, -shardSize);
-                ctx.lineTo(shardSize * .48, 0);
-                ctx.lineTo(0, shardSize * .7);
-                ctx.lineTo(-shardSize * .48, 0);
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
-            }
+            ctx.globalAlpha = alpha * (.84 + pulse * .1);
+            drawEffectCacheSprite(ctx, outerSprite, this.x, this.y, this.s, 1);
             ctx.restore();
 
             ctx.save();
             this.traceShapePath(ctx);
             ctx.clip();
             ctx.globalAlpha = alpha;
-
-            let frost = ctx.createRadialGradient(this.x - this.s * .24, this.y - this.s * .3, this.s * .08, this.x, this.y, this.s * 1.05);
-            frost.addColorStop(0, "rgba(250,254,255," + (0.34 + pulse * .1) + ")");
-            frost.addColorStop(.28, "rgba(188,236,255," + (0.28 + pulse * .08) + ")");
-            frost.addColorStop(.64, "rgba(112,198,255," + (0.24 + pulse * .06) + ")");
-            frost.addColorStop(1, "rgba(62,120,220,0.14)");
-            ctx.fillStyle = frost;
-            ctx.fillRect(this.x - this.s - 14, this.y - this.s - 14, this.s * 2 + 28, this.s * 2 + 28);
-
-            let chillBand = ctx.createLinearGradient(this.x - this.s * .9, this.y - this.s * .8, this.x + this.s, this.y + this.s * .9);
-            chillBand.addColorStop(0, "rgba(255,255,255,0)");
-            chillBand.addColorStop(.22, "rgba(232,250,255,0.18)");
-            chillBand.addColorStop(.5, "rgba(146,222,255,0.24)");
-            chillBand.addColorStop(.76, "rgba(228,250,255,0.16)");
-            chillBand.addColorStop(1, "rgba(255,255,255,0)");
-            ctx.fillStyle = chillBand;
-            ctx.fillRect(this.x - this.s - 10, this.y - this.s - 10, this.s * 2 + 20, this.s * 2 + 20);
-
-            ctx.strokeStyle = "rgba(238,251,255,0.34)";
-            ctx.lineWidth = Math.max(1.2, this.s * .02);
-            for (let i = 0; i < frostLineCount; i++) {
-                let mapped = frostLineCount === 1 ? 0 : i - 1;
-                let offset = mapped * this.s * .23;
-                ctx.beginPath();
-                ctx.moveTo(this.x - this.s * .74, this.y - this.s * .1 + offset);
-                ctx.lineTo(this.x - this.s * .18, this.y - this.s * .36 + offset * .65);
-                ctx.lineTo(this.x + this.s * .08, this.y - this.s * .18 + offset * .35);
-                ctx.lineTo(this.x + this.s * .58, this.y - this.s * .44 + offset * .2);
-                ctx.stroke();
-            }
-            if (perfLevel === 2) {
-                ctx.strokeStyle = "rgba(176,230,255,0.42)";
-                ctx.lineWidth = Math.max(1.1, this.s * .016);
-                for (let i = 0; i < 3; i++) {
-                    let angle = sweep + i * 1.45,
-                        startX = this.x + Math.cos(angle) * this.s * .2,
-                        startY = this.y + Math.sin(angle) * this.s * .18;
-                    ctx.beginPath();
-                    ctx.moveTo(startX, startY);
-                    ctx.lineTo(startX + Math.cos(angle + .2) * this.s * .22, startY + Math.sin(angle + .2) * this.s * .22);
-                    ctx.lineTo(startX + Math.cos(angle - .28) * this.s * .36, startY + Math.sin(angle - .28) * this.s * .36);
-                    ctx.stroke();
-                }
-            }
+            drawEffectCacheSprite(ctx, innerSprite, this.x, this.y, this.s, .92 + pulse * .06);
             ctx.restore();
 
             ctx.save();
@@ -2730,8 +2981,8 @@
             this.traceShapePath(ctx);
             ctx.strokeStyle = "rgba(196,242,255," + (0.86 + pulse * .08) + ")";
             ctx.lineWidth = Math.max(4, this.s * .05);
-            ctx.shadowBlur = perfLevel === 2 ? 18 + this.s * .08 : perfLevel === 1 ? 8 + this.s * .04 : 0;
-            ctx.shadowColor = "rgba(114,224,255,0.48)";
+            ctx.shadowBlur = perfLevel === 2 ? 8 + this.s * .03 : perfLevel === 1 ? 4 + this.s * .015 : 0;
+            ctx.shadowColor = "rgba(114,224,255,0.28)";
             ctx.stroke();
 
             ctx.shadowBlur = 0;
@@ -2753,37 +3004,15 @@
         }
         drawFreezeOrbProjectile(ctx, alpha) {
             let pulse = .76 + .24 * Math.sin(syncAppStamp / 160 + this.id * .13),
-                outer = this.s * (1.2 + pulse * .05),
-                aura = ctx.createRadialGradient(this.x, this.y, this.s * .2, this.x, this.y, outer),
-                perfLevel = getRenderPerformanceLevel();
+                perfLevel = getRenderPerformanceLevel(),
+                sprite = getEffectSpriteCache("freezeOrb", this.s, perfLevel);
             ctx.save();
-            ctx.globalAlpha = alpha;
-            if (perfLevel > 0) {
-                aura.addColorStop(0, "rgba(235,248,255,0.92)");
-                aura.addColorStop(.18, "rgba(162,231,255,0.85)");
-                aura.addColorStop(.46, "rgba(130,182,255,0.42)");
-                aura.addColorStop(.58, "rgba(82,196,255,0.32)");
-                aura.addColorStop(1, "rgba(82,196,255,0)");
-                ctx.fillStyle = aura;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, outer, 0, PI_2);
-                ctx.fill();
-            }
-
-            let core = ctx.createRadialGradient(this.x - this.s * .18, this.y - this.s * .22, this.s * .08, this.x, this.y, this.s);
-            core.addColorStop(0, "rgba(255,255,255,0.98)");
-            core.addColorStop(.32, "rgba(189,239,255,0.96)");
-            core.addColorStop(.74, "rgba(89,190,255,0.82)");
-            core.addColorStop(1, "rgba(33,112,188,0.86)");
-            ctx.fillStyle = core;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.s, 0, PI_2);
-            ctx.fill();
-
+            ctx.globalAlpha = alpha * (.88 + pulse * .12);
+            drawEffectCacheSprite(ctx, sprite, this.x, this.y, this.s, 1);
             ctx.strokeStyle = "rgba(232,250,255," + (0.78 + pulse * .12) + ")";
             ctx.lineWidth = Math.max(1.8, this.s * .12);
-            ctx.shadowBlur = perfLevel === 2 ? 18 : perfLevel === 1 ? 8 : 0;
-            ctx.shadowColor = "rgba(92,210,255,0.55)";
+            ctx.shadowBlur = perfLevel === 2 ? 10 : perfLevel === 1 ? 4 : 0;
+            ctx.shadowColor = "rgba(92,210,255,0.42)";
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.s * .88, syncAppStamp / 420, syncAppStamp / 420 + 1.6);
             ctx.stroke();
@@ -2795,45 +3024,19 @@
                 ctx.arc(this.x, this.y, this.s * .62, -syncAppStamp / 360, -syncAppStamp / 360 + 1.2);
                 ctx.stroke();
             }
-
-            ctx.fillStyle = "rgba(255,255,255,0.85)";
-            ctx.beginPath();
-            ctx.arc(this.x - this.s * .26, this.y - this.s * .24, Math.max(1.5, this.s * .16), 0, PI_2);
-            ctx.fill();
             ctx.restore();
         }
         drawSpikeOrbProjectile(ctx, alpha) {
             let pulse = .74 + .26 * Math.sin(syncAppStamp / 150 + this.id * .17),
-                outer = this.s * (1.22 + pulse * .04),
-                glow = ctx.createRadialGradient(this.x, this.y, this.s * .18, this.x, this.y, outer),
-                perfLevel = getRenderPerformanceLevel();
+                perfLevel = getRenderPerformanceLevel(),
+                sprite = getEffectSpriteCache("spikeOrb", this.s, perfLevel);
             ctx.save();
-            ctx.globalAlpha = alpha;
-            if (perfLevel > 0) {
-                glow.addColorStop(0, "rgba(255,236,214,0.95)");
-                glow.addColorStop(.22, "rgba(255,162,108,0.88)");
-                glow.addColorStop(.58, "rgba(255,104,62,0.34)");
-                glow.addColorStop(1, "rgba(255,104,62,0)");
-                ctx.fillStyle = glow;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, outer, 0, PI_2);
-                ctx.fill();
-            }
-
-            let core = ctx.createRadialGradient(this.x - this.s * .15, this.y - this.s * .16, this.s * .08, this.x, this.y, this.s);
-            core.addColorStop(0, "rgba(255,255,255,0.96)");
-            core.addColorStop(.28, "rgba(255,204,152,0.94)");
-            core.addColorStop(.68, "rgba(255,120,64,0.88)");
-            core.addColorStop(1, "rgba(121,28,18,0.88)");
-            ctx.fillStyle = core;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.s, 0, PI_2);
-            ctx.fill();
-
+            ctx.globalAlpha = alpha * (.88 + pulse * .12);
+            drawEffectCacheSprite(ctx, sprite, this.x, this.y, this.s, 1);
             ctx.strokeStyle = "rgba(255,235,205," + (0.76 + pulse * .12) + ")";
             ctx.lineWidth = Math.max(1.8, this.s * .12);
-            ctx.shadowBlur = perfLevel === 2 ? 18 : perfLevel === 1 ? 8 : 0;
-            ctx.shadowColor = "rgba(255,118,78,0.52)";
+            ctx.shadowBlur = perfLevel === 2 ? 10 : perfLevel === 1 ? 4 : 0;
+            ctx.shadowColor = "rgba(255,118,78,0.42)";
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.s * .9, syncAppStamp / 360, syncAppStamp / 360 + 1.35);
             ctx.stroke();
@@ -2845,11 +3048,6 @@
                 ctx.arc(this.x, this.y, this.s * .58, -syncAppStamp / 300, -syncAppStamp / 300 + 1.1);
                 ctx.stroke();
             }
-
-            ctx.fillStyle = "rgba(255,244,224,0.82)";
-            ctx.beginPath();
-            ctx.arc(this.x - this.s * .24, this.y - this.s * .22, Math.max(1.5, this.s * .14), 0, PI_2);
-            ctx.fill();
             ctx.restore();
         }
         drawShape(ctx) {
@@ -2930,6 +3128,11 @@
         }
         for (let i in cachedMass)
             if (syncAppStamp - cachedMass[i].accessTime >= 5000) delete cachedMass[i];
+        for (let effect in cachedEffectSprites) {
+            for (let key in cachedEffectSprites[effect])
+                if (syncAppStamp - cachedEffectSprites[effect][key].accessTime >= 8000) delete cachedEffectSprites[effect][key];
+            if (!Object.keys(cachedEffectSprites[effect]).length) delete cachedEffectSprites[effect];
+        }
     }
     function drawTextOnto(canvas, ctx, text, size) {
         ctx.font = `${size}px Ubuntu`;
