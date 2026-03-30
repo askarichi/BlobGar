@@ -754,9 +754,8 @@
         }
         function noxSyncLandscapePrompt() {
             var mobileLike = noxIsMobileLike();
-            var arenaActive = document.body.classList.contains("arena-mode");
             var portrait = window.innerHeight > window.innerWidth;
-            document.body.classList.toggle("nox-mobile-force-landscape", !!(mobileLike && arenaActive && portrait));
+            document.body.classList.toggle("nox-mobile-force-landscape", !!(mobileLike && portrait));
             noxSyncTelegramGestureState();
         }
         function noxInstallArenaGestureGuards() {

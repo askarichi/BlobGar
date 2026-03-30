@@ -247,6 +247,24 @@ select {
     body.nox-mobile-client.arena-mode.nox-mobile-force-landscape #nox-mobile-landscape-lock {
         display: none;
     }
+
+    body.nox-mobile-client.lobby-mode.nox-mobile-force-landscape #overlays {
+        top: 50%;
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        width: 100vh;
+        height: 100vw;
+        transform: translate(-50%, -50%) rotate(90deg);
+        transform-origin: center center;
+        overflow: hidden;
+    }
+
+    body.nox-mobile-client.lobby-mode.nox-mobile-force-landscape #helloDialog {
+        inset: 12px;
+        min-height: calc(100% - 24px);
+        height: calc(100% - 24px);
+    }
 }
 
 #nox-arena-hud {
@@ -881,29 +899,40 @@ body.nox-mobile-client.arena-mode #nox-arena-abilities {
 
 .nox-mobile-joystick {
     position: relative;
-    width: 138px;
-    display: grid;
-    justify-items: center;
-    gap: 8px;
+    width: min(46vw, 300px);
+    min-width: 180px;
+    height: min(42vh, 300px);
+    min-height: 180px;
+    display: block;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    --nox-stick-anchor-x: 72px;
+    --nox-stick-anchor-y: 124px;
 }
 
 .nox-mobile-joystick__halo {
     position: absolute;
-    inset: 10px;
+    width: 118px;
+    height: 118px;
+    left: var(--nox-stick-anchor-x);
+    top: var(--nox-stick-anchor-y);
     border-radius: 50%;
     background: radial-gradient(circle, rgba(246, 196, 83, 0.12), rgba(246, 196, 83, 0.02) 58%, transparent 72%);
     filter: blur(10px);
-    opacity: .85;
+    opacity: .52;
     pointer-events: none;
+    transform: translate(-50%, -50%);
+    transition: opacity .12s ease;
 }
 
 .nox-mobile-joystick__base {
-    position: relative;
+    position: absolute;
+    left: var(--nox-stick-anchor-x);
+    top: var(--nox-stick-anchor-y);
     width: 138px;
     height: 138px;
+    margin: 0;
     border-radius: 50%;
     border: 1px solid rgba(246, 196, 83, 0.14);
     background:
@@ -915,6 +944,8 @@ body.nox-mobile-client.arena-mode #nox-arena-abilities {
         inset 0 0 0 1px rgba(0, 0, 0, 0.22),
         0 10px 24px rgba(0, 0, 0, 0.28);
     overflow: hidden;
+    transform: translate(-50%, -50%);
+    transition: opacity .12s ease;
 }
 
 .nox-mobile-joystick__ring {
@@ -951,6 +982,9 @@ body.nox-mobile-client.arena-mode #nox-arena-abilities {
 }
 
 .nox-mobile-joystick__label {
+    position: absolute;
+    left: var(--nox-stick-anchor-x);
+    top: var(--nox-stick-anchor-y);
     padding: 4px 10px;
     border-radius: 999px;
     background: rgba(11, 11, 11, 0.76);
@@ -960,6 +994,23 @@ body.nox-mobile-client.arena-mode #nox-arena-abilities {
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    pointer-events: none;
+    transform: translate(-50%, 86px);
+    transition: opacity .12s ease;
+}
+
+.nox-mobile-joystick:not(.is-active) .nox-mobile-joystick__base {
+    opacity: .74;
+}
+
+.nox-mobile-joystick:not(.is-active) .nox-mobile-joystick__label {
+    opacity: .78;
+}
+
+.nox-mobile-joystick.is-active .nox-mobile-joystick__halo,
+.nox-mobile-joystick.is-active .nox-mobile-joystick__base,
+.nox-mobile-joystick.is-active .nox-mobile-joystick__label {
+    opacity: 1;
 }
 
 .nox-mobile-actions {
@@ -4366,7 +4417,10 @@ body.nox-mobile-client .nox-run-results__actions .nox-primary-action--modal {
     }
 
     .nox-mobile-joystick {
-        width: 120px;
+        width: min(50vw, 240px);
+        min-width: 150px;
+        height: min(38vh, 240px);
+        min-height: 150px;
     }
 
     .nox-mobile-joystick__base {

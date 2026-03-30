@@ -408,6 +408,10 @@
             joystick: null,
             knob: null,
             activePointerId: null,
+            anchorClientX: 0,
+            anchorClientY: 0,
+            anchorLocalX: 0,
+            anchorLocalY: 0,
             vectorX: 0,
             vectorY: 0,
             maxDistance: 38,
@@ -1243,6 +1247,35 @@
         document.body.classList.toggle("nox-mobile-client", mobileControls.enabled);
         if (mobileControls.root) mobileControls.root.setAttribute("aria-hidden", mobileControls.enabled && !overlayShown ? "false" : "true");
         if (!mobileControls.enabled) resetMobileJoystick();
+        else if (mobileControls.joystick && !mobileControls.activePointerId) positionMobileJoystickDefault();
+    }
+    function syncMobileJoystickAnchor(localX, localY) {
+        if (!mobileControls.joystick) return;
+        mobileControls.anchorLocalX = localX;
+        mobileControls.anchorLocalY = localY;
+        mobileControls.joystick.style.setProperty("--nox-stick-anchor-x", `${localX}px`);
+        mobileControls.joystick.style.setProperty("--nox-stick-anchor-y", `${localY}px`);
+    }
+    function positionMobileJoystickDefault() {
+        if (!mobileControls.joystick) return;
+        let rect = mobileControls.joystick.getBoundingClientRect(),
+            margin = Math.max(60, Math.min(rect.width, rect.height) * .24),
+            localX = Math.max(margin, Math.min(rect.width - margin, rect.width * .34)),
+            localY = Math.max(margin, Math.min(rect.height - margin, rect.height * .68));
+        mobileControls.anchorClientX = rect.left + localX;
+        mobileControls.anchorClientY = rect.top + localY;
+        syncMobileJoystickAnchor(localX, localY);
+    }
+    function setMobileJoystickAnchorFromPointer(event) {
+        if (!mobileControls.joystick) return;
+        let rect = mobileControls.joystick.getBoundingClientRect(),
+            margin = Math.max(60, Math.min(rect.width, rect.height) * .24),
+            localX = Math.max(margin, Math.min(rect.width - margin, event.clientX - rect.left)),
+            localY = Math.max(margin, Math.min(rect.height - margin, event.clientY - rect.top));
+        mobileControls.anchorClientX = rect.left + localX;
+        mobileControls.anchorClientY = rect.top + localY;
+        syncMobileJoystickAnchor(localX, localY);
+        mobileControls.joystick.classList.add("is-active");
     }
     function updateMobileJoystickVisual() {
         if (!mobileControls.knob) return;
@@ -1254,17 +1287,18 @@
         mobileControls.activePointerId = null;
         mobileControls.vectorX = 0;
         mobileControls.vectorY = 0;
+        if (mobileControls.joystick) mobileControls.joystick.classList.remove("is-active");
+        positionMobileJoystickDefault();
         updateMobileJoystickVisual();
     }
     function updateMobileJoystickFromPointer(event) {
         if (!mobileControls.joystick) return;
-        let rect = mobileControls.joystick.getBoundingClientRect(),
-            centerX = rect.left + rect.width / 2,
-            centerY = rect.top + rect.height / 2,
+        let centerX = mobileControls.anchorClientX,
+            centerY = mobileControls.anchorClientY,
             deltaX = event.clientX - centerX,
             deltaY = event.clientY - centerY,
             distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY) || 1,
-            maxDistance = mobileControls.maxDistance = Math.max(28, rect.width * 0.28),
+            maxDistance = mobileControls.maxDistance = 42,
             ratio = Math.min(1, maxDistance / distance);
         mobileControls.vectorX = deltaX * ratio / maxDistance;
         mobileControls.vectorY = deltaY * ratio / maxDistance;
@@ -1377,6 +1411,7 @@
                 event.preventDefault();
                 event.stopPropagation();
                 mobileControls.activePointerId = event.pointerId;
+                setMobileJoystickAnchorFromPointer(event);
                 mobileControls.joystick.setPointerCapture(event.pointerId);
                 updateMobileJoystickFromPointer(event);
             }, {
@@ -1422,6 +1457,7 @@
             mobileControls.joystick.addEventListener("lostpointercapture", resetMobileJoystick);
         }
         updateMobileClientMode();
+        positionMobileJoystickDefault();
         updateMobileJoystickVisual();
     }
     function getArenaAbilityProfileSummary() {
@@ -2205,7 +2241,7 @@
         stats.framesPerSecond += (1000 / Math.max(Date.now() - syncAppStamp, 1) - stats.framesPerSecond) / 10;
         syncAppStamp = Date.now();
         updateRenderPerformanceGuard();
-        let drawList = cells.list.slice(0).sort(cellSort);
+        let drawList = cells.list.slice(0);
         for (let i = 0; i < drawList.length; i++) drawList[i].update(syncAppStamp);
         cameraUpdate();
         updateArenaHud();
@@ -2223,6 +2259,7 @@
                 jellyCellIds[cell.id] = 1;
             }
         }
+        visibleCells.sort(cellSort);
         if (settings.jellyPhysics && performanceGuard.frameIndex % getJellyUpdateStride() === 0) {
             updateQuadtree(jellyCells, jellyBounds);
             for (let i = 0; i < drawList.length; i++) {
